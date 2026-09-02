@@ -12,42 +12,54 @@ def extract_frame(path, t, out):
                     "-frames:v", "1", out], check=True)
 
 
-def measure_gaps(frame_png, layout, anchor_bot, anchor_top):
-    """Mide gaps reales. Devuelve (gap_top_real, gap_bot_real)."""
+def _color_mask(a, hexc, tol=30):
+    R, G, B = a[:, :, 0], a[:, :, 1], a[:, :, 2]
+    hx = hexc.lstrip("#")
+    r = int(hx[0:2], 16); g = int(hx[2:4], 16); b = int(hx[4:6], 16)
+    return (abs(R - r) <= tol) & (abs(G - g) <= tol) & (abs(B - b) <= tol)
+
+
+def measure_gaps(frame_png, layout, anchor_bot=None, anchor_top=None):
+    """Mide gaps reales usando VENTANAS alrededor del modelo (los glifos estan
+    donde el layout dice, ±pocos px) y umbral proporcional al ancho de la linea
+    ancla. Devuelve (gap_top_real, gap_bot_real)."""
     im = Image.open(frame_png).convert("RGB")
     a = np.asarray(im).astype(int)
-    R, G, B = a[:, :, 0], a[:, :, 1], a[:, :, 2]
     v = layout.video
     cw = layout.cw
+    gtop = gbot = None
 
-    def color_mask(hexc, tol=30):
-        hx = hexc.lstrip("#")
-        r = int(hx[0:2], 16); g = int(hx[2:4], 16); b = int(hx[4:6], 16)
-        return (abs(R - r) <= tol) & (abs(G - g) <= tol) & (abs(B - b) <= tol)
-
-    def find_rows(hexc, y0, y1, half):
+    # --- gap superior: ancla = ultima linea del bloque superior ---
+    if anchor_bot and layout.top_block.lines:
+        ln = layout.top_block.lines[-1]
+        thr = max(12, int(ln.width_px * 0.06))
+        half = max(ln.width_px // 2 + 40, 100)
         x0 = max(0, cw // 2 - half)
         x1 = min(cw, cw // 2 + half)
-        sl = color_mask(hexc)[y0:y1, x0:x1]
-        strong = np.where(sl.sum(axis=1) >= 40)[0]
-        if len(strong) == 0:
-            return None
-        return (int(strong.min()) + y0, int(strong.max()) + y0)
+        y0 = max(0, ln.y - 4)
+        y1 = min(v.top - 1, ln.y + layout.top_block.bottom - ln.y + 6)
+        sl = _color_mask(a, ln.color)[y0:y1, x0:x1]
+        rows = np.where(sl.sum(axis=1) >= thr)[0]
+        if len(rows):
+            gtop = v.top - (int(rows.max()) + y0)
 
-    allw = [ln.width_px for ln in list(layout.top_block.lines) + list(layout.bot_block.lines)]
-    half = max(allw or [300]) // 2 + 40
-    gtop = gbot = None
-    if anchor_bot:
-        rs = find_rows(anchor_bot, 0, max(0, v.top - 1), half)
-        gtop = v.top - rs[1] if rs else None
-    if anchor_top:
-        rs = find_rows(anchor_top, min(v.bottom + 1, layout.ch), layout.ch, half)
-        gbot = rs[0] - v.bottom if rs else None
+    # --- gap inferior: ancla = primera linea del bloque inferior ---
+    if anchor_top and layout.bot_block.lines:
+        ln = layout.bot_block.lines[0]
+        thr = max(12, int(ln.width_px * 0.06))
+        half = max(ln.width_px // 2 + 40, 100)
+        x0 = max(0, cw // 2 - half)
+        x1 = min(cw, cw // 2 + half)
+        y0 = max(v.bottom + 1, ln.y - 6)
+        y1 = min(layout.ch, ln.y + layout.bot_block.bottom - ln.y + 4)
+        sl = _color_mask(a, ln.color)[y0:y1, x0:x1]
+        rows = np.where(sl.sum(axis=1) >= thr)[0]
+        if len(rows):
+            gbot = (int(rows.min()) + y0) - v.bottom
     return gtop, gbot
 
 
 def diagnostic_frame(source_png, layout, out_png):
-    """Dibuja bbox de video/bloques, gaps y safe zones sobre el frame."""
     im = Image.open(source_png).convert("RGB")
     d = ImageDraw.Draw(im)
     v = layout.video
@@ -61,6 +73,8 @@ def diagnostic_frame(source_png, layout, out_png):
     d.rectangle([sl["left"], sl["top"], sl["right"], sl["bottom"]], outline=(255, 255, 0), width=2)
     d.rectangle([v.x, v.top, v.right, v.bottom], outline=(0, 255, 255), width=3)
     for blk, col in ((layout.top_block, (0, 255, 0)), (layout.bot_block, (255, 0, 255))):
+        if not blk.lines:
+            continue
         d.rectangle([blk.left, blk.top, blk.right, blk.bottom], outline=col, width=2)
         gap = layout.gap_top if col == (0, 255, 0) else layout.gap_bot
         d.text((blk.left + 2, blk.top - f - 2), f"gap {gap}", fill=col, font=ft)

@@ -93,13 +93,14 @@ def render(video, out, top_spec, bot_spec, preset_name="tiktok_fortnite",
         gtop, gbot = vr.measure_gaps(frame_png, layout, *anchors)
         print(f"[check {it}] real arriba={gtop} real abajo={gbot} "
               f"(modelo {layout.gap_top}/{layout.gap_bot})")
-        ok = (gtop is not None and abs(gtop - layout.gap_top) <= 2 and
-              gbot is not None and abs(gbot - layout.gap_bot) <= 2)
+        top_ok = (gtop is None or (layout.gap_top is not None and abs(gtop - layout.gap_top) <= 2))
+        bot_ok = (gbot is None or (layout.gap_bot is not None and abs(gbot - layout.gap_bot) <= 2))
+        ok = top_ok and bot_ok
         if not correct or ok:
             final_frame = frame_png
             break
-        d_top = (layout.gap_top - gtop) if gtop is not None else 0
-        d_bot = (layout.gap_bot - gbot) if gbot is not None else 0
+        d_top = (layout.gap_top - gtop) if (gtop is not None and layout.gap_top is not None) else 0
+        d_bot = (layout.gap_bot - gbot) if (gbot is not None and layout.gap_bot is not None) else 0
         if d_top == 0 and d_bot == 0:
             final_frame = frame_png
             break

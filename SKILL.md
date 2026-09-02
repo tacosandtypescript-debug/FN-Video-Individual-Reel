@@ -66,12 +66,51 @@ python3 scripts/render_video.py INPUT.mp4 -o SALIDA.mp4 \
 
 Tras renderizar, `validate_render.py` mide sobre el frame real: si `gap_real_arriba` o `gap_real_abajo` difieren >2px del modelo, corrige el layout y re-renderiza (max 3 intentos). El render se considera OK con gaps reales == modelo (±2px) y zona segura respetada.
 
-## Telegram /video
+## Telegram /video <URL> — one-shot (flujo oficial)
 
-1. Llega `/video` (o `/video preset=...`). Cargar esta skill y seguir el pipeline.
-2. Si no hay archivo: `VIDEO_EDIT_MODE = true` en la conversacion; pedir el video. El proximo archivo del chat entra al flujo.
-3. Con el archivo: guardarlo, `probe` -> geometria -> preset -> textos (preguntar titulo si no viene) -> render -> validar -> **enviar el video terminado por Telegram**.
-4. Entregar SIEMPRE primero un frame de aprobacion si el usuario lo pide; ante duda, frame primero.
+El comando principal es **`/video <URL>`** y significa:
+_"Obtén este video, reúne su información, cierra las herramientas de descarga y
+edítalo automáticamente usando todas las reglas de vertical-video-editor."_
+
+Flujo (handler de Telegram SOLO orquesta; la lógica vive en los scripts):
+
+```
+/video URL -> video_command.py run URL -o salida.mp4 [--top] [--bot]
+  1 validar URL                    (invalid_url si no es http/https)
+  2 VideoResolver: detectar plataforma -> yt-dlp PRIMERO (sin navegador)
+      tiktok / x / youtube / instagram / mp4 directo / unknown
+  3 si yt-dlp pide login/privado  -> marcar BROWSER_REQUIRED
+      el AGENTE usa browser_* (Hermes) para resolver y descargar
+  4 cerrar COMPLETAMENTE el navegador antes de renderizar
+      (browser.close + liberar procesos/temporales; nunca render con Chrome abierto)
+  5 guardar metadata (VideoJob -> <salida>.job.json)
+  6 vertical-video-editor: probe -> geometria -> preset -> textos -> FFmpeg -> validar
+  7 enviar video terminado por Telegram (MEDIA:<out>)
+```
+
+Ejecución desde línea: `python3 scripts/video_command.py run URL -o out.mp4`
+(mensajes de progreso: Resolviendo… Descargando… Analizando… Preparando…
+Renderizando… Validando… Enviando…).
+
+### VideoJob (objeto de trabajo)
+
+`source_url, resolved_url, platform, title, author, description, duration,
+thumbnail, width, height, fps, date, input_file, workdir, metadata` — se guarda
+como JSON junto a la salida. Si falta `--top/--bot`, el texto superior se genera
+automáticamente desde el título (2 líneas que caben en el canvas); si no hay
+título, pedir al usuario el texto antes de renderizar.
+
+### Errores (siempre limpiar con try/finally)
+
+URL inválida · plataforma no soportada · video privado · login requerido ·
+descarga fallida · archivo vacío/corrupto · FFprobe fallido · FFmpeg fallido ·
+timeout. En cualquier caso: cerrar navegador, matar procesos hijos, borrar
+temporales y liberar el job.
+
+### Compatibilidad
+
+TikTok, X/Twitter, YouTube, Instagram y URLs directas MP4 vía yt-dlp (fallback
+de navegador solo si realmente hace falta).
 
 ## Tests
 

@@ -5,7 +5,9 @@ Video central: contain (sin deformar). Textos anclados al video:
     topTextBlock.bottom = videoTop - gap
     bottomTextBlock.top  = videoBottom + gap   (topGap == bottomGap)
 Cada bloque (1+ lineas) se mide como UNIDAD (bbox) antes de posicionarse.
-Safe zones se aplican SOLO a texto desplazando el bloque entero lo minimo.
+
+Calibracion empirica drawtext: con y=Y las filas van de Y a Y+H-1, donde H es el
+bbox real de la linea medido con PIL (incluye ascendentes/descendentes/italica).
 """
 from dataclasses import dataclass
 from PIL import ImageFont
@@ -17,6 +19,19 @@ def glyph_h(fs):
 
 def scale_1080(value, canvas_h):
     return max(1, round(value * canvas_h / 1920))
+
+
+def line_h(font_path, text, fs):
+    """Alto real en px de la linea (getbbox de PIL a ese tamano)."""
+    try:
+        bb = ImageFont.truetype(font_path, fs).getbbox(text)
+        return max(1, bb[3] - bb[1])
+    except Exception:
+        return glyph_h(fs)
+
+
+def line_width(font_path, text, fs):
+    return int(round(ImageFont.truetype(font_path, fs).getlength(text)))
 
 
 @dataclass
@@ -54,38 +69,56 @@ class TextLine:
     size: int = 60
     y: int = 0
     width_px: int = 0
+    height_px: int = 0
+
+    def h(self, font_path):
+        return self.height_px or line_h(font_path, self.text, self.size)
 
 
 def measure(font_path, lines):
+    f = None
     for ln in lines:
-        ln.width_px = int(round(ImageFont.truetype(font_path, ln.size).getlength(ln.text)))
+        if f is None or True:
+            f = ImageFont.truetype(font_path, ln.size)
+        ln.width_px = int(round(f.getlength(ln.text)))
+        bb = f.getbbox(ln.text)
+        ln.height_px = max(1, bb[3] - bb[1])
     return lines
 
 
 class TextBlock:
-    """Unidad de texto (1+ lineas)."""
-    def __init__(self, lines, canvas_w, side, anchor_row, spacing):
+    """Unidad de texto (1+ lineas). Filas: y .. y+H-1."""
+    def __init__(self, lines, canvas_w, font_path, side, anchor_row, spacing):
         self.lines = lines
         self.cw = canvas_w
+        self.font = font_path
         self.spacing = spacing
-        self._place(side, anchor_row)
+        if lines:
+            self._place(side, anchor_row)
+            self._recompute()
+        else:
+            self.top = self.bottom = self.left = self.right = 0
+            self.width = self.height = 0
 
     def _place(self, side, anchor_row):
         if side == "bottom":
-            y = anchor_row - 1
-            for ln in reversed(self.lines):
+            # primera linea: su fila TOP == anchor_row
+            y = anchor_row
+            for ln in self.lines:
                 ln.y = y
-                y -= glyph_h(ln.size) + self.spacing
+                y += ln.h(self.font) + self.spacing
         else:
-            y = anchor_row - glyph_h(self.lines[-1].size)
+            # ultima linea: su fila BOTTOM == anchor_row
+            y = anchor_row - self.lines[-1].h(self.font) + 1
             for ln in reversed(self.lines):
                 ln.y = y
-                y -= glyph_h(ln.size) + self.spacing
-        self._recompute()
+                y -= ln.h(self.font) + self.spacing
 
     def _recompute(self):
-        self.top = min(ln.y for ln in self.lines) + 1
-        self.bottom = max(ln.y + glyph_h(ln.size) for ln in self.lines)
+        if not self.lines:
+            return
+        self.top = min(ln.y for ln in self.lines)
+        self.bottom = max(ln.y + ln.h(self.font) - 1 for ln in self.lines)
         mw = max(ln.width_px for ln in self.lines)
         self.left = self.cw // 2 - mw // 2
         self.right = self.left + mw
@@ -93,11 +126,15 @@ class TextBlock:
         self.height = self.bottom - self.top + 1
 
     def shift(self, dy):
+        if not self.lines:
+            return
         for ln in self.lines:
             ln.y += dy
         self._recompute()
 
     def __repr__(self):
+        if not self.lines:
+            return "(vacio)"
         return (f"bbox top={self.top} bottom={self.bottom} left={self.left} "
                 f"right={self.right} w={self.width} h={self.height}")
 
@@ -110,7 +147,7 @@ class Layout:
         self.spacing = spacing if spacing is not None else scale_1080(18, canvas_h)
         self.font = font_path or ""
         self.wave = wave
-        if font_path:
+        if font_path and (top_lines or bot_lines):
             measure(font_path, top_lines)
             measure(font_path, bot_lines)
         s = safe or {"left_f": 0.056, "right_f": 0.056, "top_f": 0.0725, "bottom_f": 0.174}
@@ -119,26 +156,26 @@ class Layout:
                             "top": int(canvas_h * s["top_f"]),
                             "bottom": canvas_h - int(canvas_h * s["bottom_f"])}
         self.video = video_box(canvas_w, canvas_h, content_w, content_h)
-        self.top_block = TextBlock(top_lines, canvas_w, "top",
+        self.top_block = TextBlock(top_lines, canvas_w, font_path or "", "top",
                                    self.video.top - self.gap, self.spacing)
-        self.bot_block = TextBlock(bot_lines, canvas_w, "bottom",
+        self.bot_block = TextBlock(bot_lines, canvas_w, font_path or "", "bottom",
                                    self.video.bottom + self.gap, self.spacing)
         self._clamp_safe()
 
     def _clamp_safe(self):
         sl = self.safe_limits
-        if self.top_block.top < sl["top"]:
+        if self.top_block.top and self.top_block.top < sl["top"]:
             self.top_block.shift(sl["top"] - self.top_block.top)
-        if self.bot_block.bottom > sl["bottom"]:
+        if self.bot_block.lines and self.bot_block.bottom > sl["bottom"]:
             self.bot_block.shift(sl["bottom"] - self.bot_block.bottom)
 
     @property
     def gap_top(self):
-        return self.video.top - self.top_block.bottom
+        return self.video.top - self.top_block.bottom if self.top_block.lines else None
 
     @property
     def gap_bot(self):
-        return self.bot_block.top - self.video.bottom
+        return self.bot_block.top - self.video.bottom if self.bot_block.lines else None
 
     def debug(self, src_note=""):
         v = self.video
@@ -148,11 +185,16 @@ class Layout:
         L += [f"Video rendered: {v.w}x{v.h}", f"Video top: {v.top}",
               f"Video bottom: {v.bottom}"]
         for name, blk in (("Top text", self.top_block), ("Bottom text", self.bot_block)):
-            L.append(f"{name} bbox: {blk}")
-            L.append(f"{name.split()[0]} lines: " + ", ".join(
-                f"'{t.text}' fs{t.size} y{t.y}" for t in blk.lines))
-        L += [f"Top gap: {self.gap_top}", f"Bottom gap: {self.gap_bot}",
-              f"Gaps equal: {abs(self.gap_top - self.gap_bot) <= 2}"]
+            if blk.lines:
+                L.append(f"{name} bbox: {blk}")
+                L.append(f"{name.split()[0]} lines: " + ", ".join(
+                    f"'{t.text}' fs{t.size} y{t.y} H{t.height_px}" for t in blk.lines))
+            else:
+                L.append(f"{name}: (vacio)")
+        L.append(f"Top gap: {self.gap_top}")
+        L.append(f"Bottom gap: {self.gap_bot}")
+        if self.gap_top is not None and self.gap_bot is not None:
+            L.append(f"Gaps equal: {abs(self.gap_top - self.gap_bot) <= 2}")
         return "\n".join(L)
 
 
