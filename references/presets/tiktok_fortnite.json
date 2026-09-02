@@ -1,0 +1,29 @@
+{
+  "name": "tiktok_fortnite",
+  "description": "Estilo TikTok Fortnite @khetzalgg: video central ancho completo, fondo cover blur, textos anclados con gap simetrico",
+  "canvas": [1080, 1920],
+  "gap_1080": 32,
+  "spacing_1080": 18,
+  "font_size_1080": 60,
+  "font": "/home/isaac/.local/share/fonts/Barlow-ExtraBoldItalic.ttf",
+  "wave": 2,
+  "wave_hz": 1.1,
+  "outline": 5,
+  "outline_color": "black",
+  "blur": 16.0,
+  "cover": true,
+  "safe": {
+    "left_f": 0.056,
+    "right_f": 0.056,
+    "top_f": 0.0725,
+    "bottom_f": 0.174
+  },
+  "encode": {
+    "vcodec": "h264_nvenc",
+    "preset": "p5",
+    "cq": 21,
+    "pix_fmt": "yuv420p",
+    "acodec": "aac",
+    "audio_bitrate": "96k"
+  }
+}
