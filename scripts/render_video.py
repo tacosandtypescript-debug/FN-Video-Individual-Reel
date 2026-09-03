@@ -45,6 +45,12 @@ def render(video, out, top_spec, bot_spec, preset_name="tiktok_fortnite",
     font = font or preset["font"]
     outline = preset["outline"]
     wave_hz = preset["wave_hz"]
+    fg_radius = cl.scale_1080(preset.get("foreground_corner_radius_1080", 18), ch)
+    fg_shadow = preset.get("foreground_shadow", {})
+    shadow_enabled = bool(fg_shadow.get("enabled", True))
+    shadow_offset = cl.scale_1080(fg_shadow.get("offset_1080", 8), ch)
+    shadow_blur = cl.scale_1080(fg_shadow.get("blur_1080", 14), ch)
+    shadow_opacity = float(fg_shadow.get("opacity", 0.58))
     safe = preset["safe"]
 
     probe = pv.probe(video)
@@ -85,7 +91,11 @@ def render(video, out, top_spec, bot_spec, preset_name="tiktok_fortnite",
     for it in range(max_iter):
         cmd, tmpdir, cover = bf.build(video, probe, active, layout, out, blur=blur,
                                       cq=cq, outline=outline, wave=wave, wave_hz=wave_hz,
-                                      font=font)
+                                      font=font, fg_radius=fg_radius,
+                                      shadow_enabled=shadow_enabled,
+                                      shadow_offset=shadow_offset,
+                                      shadow_blur=shadow_blur,
+                                      shadow_opacity=shadow_opacity)
         if debug:
             print(f"Background scaled: {cover[0]}x{cover[1]} (cover, AR intacto)")
         rc, err = bf.run(cmd)

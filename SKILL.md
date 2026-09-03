@@ -47,7 +47,7 @@ probe_video.py        FFprobe: width/height/DAR/SAR/rotation/fps/duration/pix_fm
   -> build_text_layout.py drawtext por linea (fuente/color/tamano del preset)
   -> build_ffmpeg_filter.py filter_complex completo (bg + fg + overlay + texto)
   -> render_video.py      CLI: preset + override por flag + render NVENC
-  -> validate_render.py   mide gaps reales del frame y genera frame diagnostico
+  -> prepare_telegram.py  comprueba tamaño/DAR/SAR/audio y crea copia Telegram si hace falta
 ```
 
 ## Uso
@@ -66,7 +66,17 @@ python3 scripts/render_video.py INPUT.mp4 -o SALIDA.mp4 \
 - `--debug-layout`: imprime VIDEO ANALYSIS / CANVAS / FOREGROUND / TEXT / BACKGROUND.
 - `--diagnostic-frame`: genera un PNG con bounding boxes, videoTop/Bottom, gaps y safe zones dibujadas.
 
-## Verificacion (no opcional)
+## Preparación para Telegram
+
+```bash
+python3 scripts/prepare_telegram.py RENDER.mp4 -o RENDER_tg.mp4
+```
+
+Si el archivo pesa como máximo 45 MB, lo conserva. Si supera ese tamaño, genera
+una copia 720×1280 con `setsar=1`, DAR 9:16, audio AAC y NVENC. Después verifica
+codec streams, dimensiones, SAR, proporción, duración y tamaño antes de entregar.
+El archivo maestro no se modifica.
+
 
 Tras renderizar, `validate_render.py` mide sobre el frame real: si `gap_real_arriba` o `gap_real_abajo` difieren >2px del modelo, corrige el layout y re-renderiza (max 3 intentos). El render se considera OK con gaps reales == modelo (±2px) y zona segura respetada.
 
@@ -123,7 +133,11 @@ video_command.py render-approved --job JOB.json --proposal PROPUESTA.json -o sal
 El handler Telegram se limita a orquestar esas dos fases y conservar la ruta del
 Job/Proposal por chat. No contiene FFmpeg ni la lógica editorial.
 
-## Entrega en Telegram
+El script de render solo confirma `MEDIA:<ruta>` cuando el archivo ha sido creado
+y validado; la subida a Telegram la realiza el handler mediante `sendVideo`, con
+caption unido y miniatura vertical. No debe imprimir “Enviando” si todavía no ha
+hecho una llamada a Telegram.
+
 
 Cada MP4 debe enviarse mediante el método nativo de Telegram `sendVideo`, con
 el título y hashtags en el campo `caption` del mismo mensaje (no como un texto

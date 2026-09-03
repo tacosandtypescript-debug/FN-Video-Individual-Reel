@@ -95,7 +95,6 @@ def cmd_render_approved(job_path, proposal_path, out, preset, canvas, gap, blur,
     _, _, _, frame = run_render(job.input_file, out, top, bot, preset, canvas,
                                  gap, blur, cq, diag)
     print("Validando... OK (gaps reales verificados contra el objetivo)")
-    print("Enviando...\nOK")
     print(f"MEDIA:{out}")
     if frame:
         print(f"FRAME:{frame}")
