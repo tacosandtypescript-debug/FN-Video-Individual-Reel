@@ -119,7 +119,23 @@ video_command.py render-approved --job JOB.json --proposal PROPUESTA.json -o sal
 El handler Telegram se limita a orquestar esas dos fases y conservar la ruta del
 Job/Proposal por chat. No contiene FFmpeg ni la lógica editorial.
 
-## Telegram /video <URL> — one-shot (flujo oficial)
+## Entrega en Telegram
+
+Cada MP4 debe ir acompañado inmediatamente por:
+
+```text
+TÍTULO
+
+#FORTNITE #... #KHEtzALGG
+```
+
+El título debe corresponder al texto aprobado del video y los hashtags deben ser
+relevantes, sin emojis. Antes de entregar, verificar con FFprobe que el archivo
+no tenga rotación/display matrix inesperada, que conserve su relación de aspecto
+y que ancho/alto sean los esperados. Si un cliente de Telegram muestra el video
+inclinado o estirado pero el archivo descargado está correcto, informar que es un
+problema de previsualización/transcodificación del cliente; no alterar el render
+sin comprobar primero los metadatos y un frame descargado.
 
 El comando principal es **`/video <URL>`** y significa:
 _"Obtén este video, reúne su información, cierra las herramientas de descarga y

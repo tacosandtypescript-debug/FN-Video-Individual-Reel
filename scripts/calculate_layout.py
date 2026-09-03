@@ -163,6 +163,23 @@ class Layout:
                                    self.video.top - self.gap, self.spacing)
         self.bot_block = TextBlock(bot_lines, canvas_w, font_path or "", "bottom",
                                    self.video.bottom + self.gap, self.spacing)
+        # En fuentes verticales, contain puede ocupar casi todo el canvas y no
+        # dejar sitio a los dos bloques. Se reduce el video proporcionalmente,
+        # conservando AR, hasta que texto + gaps caben en safe zone.
+        if top_lines and bot_lines and self.bot_block.bottom > self.safe_limits["bottom"]:
+            max_h = (self.safe_limits["bottom"] - self.safe_limits["top"]
+                     - self.top_block.height - self.bot_block.height - 2 * self.gap)
+            if max_h > 0 and self.video.h > max_h:
+                scale = max_h / self.video.h
+                nw = max(2, int(self.video.w * scale) // 2 * 2)
+                nh = max(2, int(self.video.h * scale) // 2 * 2)
+                self.video = VideoBox((canvas_w - nw) // 2,
+                                      self.safe_limits["top"] + self.top_block.height + self.gap,
+                                      nw, nh)
+                self.top_block = TextBlock(top_lines, canvas_w, font_path or "", "top",
+                                           self.video.top - self.gap, self.spacing)
+                self.bot_block = TextBlock(bot_lines, canvas_w, font_path or "", "bottom",
+                                           self.video.bottom + self.gap, self.spacing)
         self._clamp_safe()
 
     def _clamp_safe(self):
