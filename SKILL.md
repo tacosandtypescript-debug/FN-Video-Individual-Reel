@@ -31,7 +31,11 @@ y los videos nuevos heredan las reglas automaticamente. Entrada desde Telegram: 
 5. **Background blur tipo cover, prohibido el stretch**: `scale=WxH:force_original_aspect_ratio=increase` -> `crop=WxH:(iw-W)/2:(ih-H)/2` -> `gblur`. Prohibido `scale=1080:1920` puro (deforma) y prohibido downscale extremo + upscale (destruye calidad). Blur moderado a resolucion final.
 6. **FFprobe antes de editar**: width, height, DAR, SAR, rotation, duration, fps, pixel format; `cropdetect` si hay barras negras/letterbox (contenido util).
 7. **Safe zones**: reservar areas seguras TikTok/Reels (botones laterales, @usuario, caption, controles). Las safe zones NO rompen la regla de textos pegados al video: si falta espacio, se desplaza el bloque entero lo minimo.
-8. **Preset visual**: constantes configurables viven en `presets/tiktok_fortnite.json` (canvas, gap, blur, fuentes, spacing, safe zones, outline, animacion, encode). Prohibido numeros magicos en los scripts.
+8. **Preset visual**: constantes configurables viven en `presets/tiktok_fortnite.json` (canvas, gap, blur, fuentes, spacing, safe zones, outline, animación, encode y acabado del primer plano). Prohibido usar números mágicos en los scripts.
+9. **Video en primer plano**: aplicar esquinas ligeramente redondeadas y una
+   sombra exterior suave para separarlo del background. No dibujar línea, marco ni
+   borde visible. El radio, desplazamiento, blur y opacidad viven en el preset;
+   deben mantenerse sutiles y no alterar la geometría ni deformar el video.
 
 ## Pipeline (scripts en `scripts/`)
 

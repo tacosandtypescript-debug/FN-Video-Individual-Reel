@@ -10,6 +10,13 @@
   "wave_hz": 1.1,
   "outline": 5,
   "outline_color": "black",
+  "foreground_corner_radius_1080": 18,
+  "foreground_shadow": {
+    "enabled": true,
+    "offset_1080": 4,
+    "blur_1080": 22,
+    "opacity": 0.32
+  },
   "blur": 16.0,
   "cover": true,
   "safe": {
