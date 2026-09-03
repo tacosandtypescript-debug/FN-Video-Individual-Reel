@@ -74,21 +74,27 @@ el video descargado si aporta contexto) y preparar una propuesta editorial.
 
 1. Mostrar siempre, en este orden:
    - **ORIGINAL**: título y descripción tal como fueron publicados (EN o ES).
-   - **PROPUESTO (ES)**: interpretación noticiosa clara y natural, sin traducción
-     literal rara y sin inventar datos.
-   - **ARRIBA** y **ABAJO**: por defecto ambos bloques existen; 1–2 líneas por
-     bloque. Solo usar un bloque si el usuario lo aprueba expresamente.
-   - **COLORES**: anotar las palabras clave con marcado por segmento:
-     `REGRESA LA {TEMPORADA X|B84DFF}|FFFFFF`. Lo que esté entre `{}` aplica
-     color solo a esa palabra/frase; el color final de la línea es el color por
-     defecto del resto. Usar para nombre, evento, fecha o novedad y dejar el
-     resto blanco. El color debe ayudar a leer, no decorar cada palabra.
-2. Preguntar: **“¿Te gusta esta propuesta? Responde sí para renderizar o dime qué
-   cambio quieres.”** Esperar confirmación explícita. No crear ni enviar MP4 antes
-   de ella.
-3. Al aprobar, guardar `EditorialProposal` con `status=approved`, y solo entonces
-   llamar el render. Una corrección textual genera una propuesta nueva/actualizada
-   antes de renderizar.
+   - **ANÁLISIS**: qué comunica realmente el post y el video; interpretar el
+     contexto antes de escribir, sin copiar/traducir literalmente ni inventar.
+   - **3 PROPUESTAS (ES)**, independientes y claras. Cada una tiene por defecto
+     un bloque **ARRIBA** y otro **ABAJO** (1–2 líneas por bloque). Solo ofrecer
+     un bloque único si el post de verdad no necesita contexto extra.
+   - **COLORES**: anotar solo palabras/frases informativas con marcado por
+     segmento: `REGRESA LA {TEMPORADA X|B84DFF}|FFFFFF`. Lo que esté entre `{}`
+     aplica color solo a esa palabra/frase; el color final de la línea es el
+     color por defecto del resto. Elegir color por significado: nombre/evento,
+     novedad, fecha o dato clave. Nunca pintar toda la línea sin razón ni usar
+     color como decoración.
+2. Presentar las tres opciones como botones inline de Telegram mediante
+   `clarify` (una sola pregunta, elecciones: **OPCIÓN 1**, **OPCIÓN 2**,
+   **OPCIÓN 3**). El texto previo debe mostrar arriba/abajo y las palabras de
+   color de cada opción. No sustituir botones por un “elige un número” si la
+   plataforma soporta botones.
+3. Al tocar un botón, persistir `EditorialProposalSet` con exactamente tres
+   alternativas y llamar `choose(indice)`: la seleccionada obtiene
+   `status=approved`; las otras permanecen `proposed`. Solo la seleccionada se
+   pasa a `render-approved`. Si el usuario pide cambios, crear/mostrar de nuevo
+   tres opciones y volver a esperar su botón.
 
 Herramientas persistentes:
 

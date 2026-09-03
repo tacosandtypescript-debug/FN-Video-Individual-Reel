@@ -5,6 +5,8 @@ No traduce ni inventa contexto: el agente analiza titulo/descripcion y crea una
 propuesta en español. Este modulo persiste la propuesta, valida colores y evita
 que FFmpeg reciba texto sin aprobación explícita.
 """
+from __future__ import annotations
+
 import json
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
@@ -46,6 +48,46 @@ def normalize_block(value):
     if len(lines) > 2:
         raise ValueError("Máximo dos líneas por bloque")
     return lines
+
+
+@dataclass
+class EditorialProposalSet:
+    """Tres alternativas para un mismo VideoJob; solo una puede aprobarse."""
+    job_path: str
+    options: list[EditorialProposal] = field(default_factory=list)
+    selected: int | None = None
+
+    def validate(self):
+        if len(self.options) != 3:
+            raise ValueError("Un set editorial debe contener exactamente 3 opciones")
+        for proposal in self.options:
+            proposal.validate()
+        if self.selected is not None and not 0 <= self.selected < len(self.options):
+            raise ValueError("Índice de opción editorial inválido")
+        return self
+
+    def choose(self, index):
+        self.validate()
+        if not 0 <= index < len(self.options):
+            raise ValueError("Opción editorial inexistente")
+        for proposal in self.options:
+            proposal.status = "proposed"
+        self.options[index].approve()
+        self.selected = index
+        return self.options[index]
+
+    def save(self, path):
+        self.validate()
+        data = {"job_path": self.job_path, "selected": self.selected,
+                "options": [asdict(option) for option in self.options]}
+        Path(path).write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        return path
+
+    @classmethod
+    def load(cls, path):
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        return cls(job_path=data["job_path"], selected=data.get("selected"),
+                   options=[EditorialProposal(**o) for o in data["options"]])
 
 
 @dataclass

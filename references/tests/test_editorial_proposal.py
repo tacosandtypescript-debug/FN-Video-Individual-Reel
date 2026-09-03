@@ -4,7 +4,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "scripts"))
-from editorial_proposal import EditorialProposal
+from editorial_proposal import EditorialProposal, EditorialProposalSet
 
 
 class EditorialProposalTest(unittest.TestCase):
@@ -23,6 +23,16 @@ class EditorialProposalTest(unittest.TestCase):
                               bottom=["MUNDO|FFFFFF"])
         with self.assertRaises(ValueError):
             p.validate()
+
+    def test_three_options_selects_only_one(self):
+        opts = [EditorialProposal("https://x.com/post", top=[f"OPCION {i}|FFFFFF"],
+                                  bottom=["CONTEXTO|FFFFFF"]) for i in range(3)]
+        choices = EditorialProposalSet("job.json", opts)
+        picked = choices.choose(1)
+        self.assertEqual(picked.status, "approved")
+        self.assertEqual(choices.selected, 1)
+        self.assertEqual([x.status for x in choices.options],
+                         ["proposed", "approved", "proposed"])
 
     def test_colored_word_markup_is_preserved(self):
         p = EditorialProposal("https://x.com/post",
