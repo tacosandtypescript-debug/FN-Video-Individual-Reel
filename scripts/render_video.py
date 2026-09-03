@@ -78,6 +78,10 @@ def render(video, out, top_spec, bot_spec, preset_name="tiktok_fortnite",
     anchors = (layout.top_block.lines[-1].color if layout.top_block.lines else None,
                layout.bot_block.lines[0].color if layout.bot_block.lines else None)
     final_frame = None
+    # El objetivo visual se fija antes de cualquier corrección. Las métricas
+    # de drawtext pueden diferir del bbox de PIL; por ello no se convierte un
+    # primer ajuste correcto en una cascada de desplazamientos.
+    target_top_gap, target_bot_gap = layout.gap_top, layout.gap_bot
     for it in range(max_iter):
         cmd, tmpdir, cover = bf.build(video, probe, active, layout, out, blur=blur,
                                       cq=cq, outline=outline, wave=wave, wave_hz=wave_hz,
@@ -92,15 +96,17 @@ def render(video, out, top_spec, bot_spec, preset_name="tiktok_fortnite",
         vr.extract_frame(out, 0.3, frame_png)
         gtop, gbot = vr.measure_gaps(frame_png, layout, *anchors)
         print(f"[check {it}] real arriba={gtop} real abajo={gbot} "
-              f"(modelo {layout.gap_top}/{layout.gap_bot})")
-        top_ok = (gtop is None or (layout.gap_top is not None and abs(gtop - layout.gap_top) <= 2))
-        bot_ok = (gbot is None or (layout.gap_bot is not None and abs(gbot - layout.gap_bot) <= 2))
+              f"(objetivo {target_top_gap}/{target_bot_gap})")
+        top_ok = (gtop is None or (target_top_gap is not None and abs(gtop - target_top_gap) <= 2))
+        bot_ok = (gbot is None or (target_bot_gap is not None and abs(gbot - target_bot_gap) <= 2))
         ok = top_ok and bot_ok
         if not correct or ok:
             final_frame = frame_png
             break
-        d_top = (layout.gap_top - gtop) if (gtop is not None and layout.gap_top is not None) else 0
-        d_bot = (layout.gap_bot - gbot) if (gbot is not None and layout.gap_bot is not None) else 0
+        # Superior: si el gap real es demasiado grande, bajar el bloque (dy positivo).
+        # Inferior: si el gap real es demasiado grande, subir el bloque (dy negativo).
+        d_top = (gtop - target_top_gap) if (gtop is not None and target_top_gap is not None) else 0
+        d_bot = (target_bot_gap - gbot) if (gbot is not None and target_bot_gap is not None) else 0
         if d_top == 0 and d_bot == 0:
             final_frame = frame_png
             break

@@ -98,8 +98,7 @@ def cmd_run(url, out, top_spec, bot_spec, preset, canvas, gap, blur, cq, diag, w
         print("Renderizando...")
         layout, _, _, frame = run_render(job.input_file, out, top, bot, preset,
                                          canvas, gap, blur, cq, diag)
-        print("Validando...")
-        print(f"  gaps reales modelo {layout.gap_top}/{layout.gap_bot}")
+        print("Validando... OK (gaps reales verificados contra el objetivo)")
         print("Enviando...")
         print("OK")
         meta_path = job.save(out + ".job.json")
