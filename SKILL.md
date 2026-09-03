@@ -121,21 +121,11 @@ Job/Proposal por chat. No contiene FFmpeg ni la lógica editorial.
 
 ## Entrega en Telegram
 
-Cada MP4 debe ir acompañado inmediatamente por:
-
-```text
-TÍTULO
-
-#FORTNITE #... #KHEtzALGG
-```
-
-El título debe corresponder al texto aprobado del video y los hashtags deben ser
-relevantes, sin emojis. Antes de entregar, verificar con FFprobe que el archivo
-no tenga rotación/display matrix inesperada, que conserve su relación de aspecto
-y que ancho/alto sean los esperados. Si un cliente de Telegram muestra el video
-inclinado o estirado pero el archivo descargado está correcto, informar que es un
-problema de previsualización/transcodificación del cliente; no alterar el render
-sin comprobar primero los metadatos y un frame descargado.
+Cada MP4 debe enviarse mediante el método nativo de Telegram `sendVideo`, con
+el título y hashtags en el campo `caption` del mismo mensaje (no como un texto
+posterior separado). Adjuntar una miniatura vertical explícita cuando sea
+posible; comprobar que el archivo mantenga 1080×1920, SAR 1:1 y DAR 9:16 antes
+de enviarlo.
 
 El comando principal es **`/video <URL>`** y significa:
 _"Obtén este video, reúne su información, cierra las herramientas de descarga y
