@@ -76,9 +76,16 @@ el video descargado si aporta contexto) y preparar una propuesta editorial.
    - **ORIGINAL**: título y descripción tal como fueron publicados (EN o ES).
    - **ANÁLISIS**: qué comunica realmente el post y el video; interpretar el
      contexto antes de escribir, sin copiar/traducir literalmente ni inventar.
-   - **3 PROPUESTAS (ES)**, independientes y claras. Cada una tiene por defecto
-     un bloque **ARRIBA** y otro **ABAJO** (1–2 líneas por bloque). Solo ofrecer
-     un bloque único si el post de verdad no necesita contexto extra.
+   - **3 PROPUESTAS (ES)**, independientes, naturales y noticiosas. Cada una
+     tiene por defecto un bloque **ARRIBA** y otro **ABAJO** (1–2 líneas por
+     bloque). La lectura ARRIBA + ABAJO debe formar una idea completa:
+     **arriba nombra el hecho principal y abajo añade el dato que lo completa**
+     (qué cambia, cuándo, dónde o para quién). Está prohibido reformular el
+     mismo título dos veces, intercambiar palabras sin sentido o usar frases
+     que no se entiendan aisladas. Antes de mostrarlas, comprobar: (a) se
+     entienden en español natural, (b) son fieles a la publicación, (c) no
+     repiten la misma información y (d) el gancho no es clickbait falso.
+     Solo ofrecer un bloque único si el post de verdad no necesita contexto extra.
    - **COLORES**: anotar solo palabras/frases informativas con marcado por
      segmento: `REGRESA LA {TEMPORADA X|B84DFF}|FFFFFF`. Lo que esté entre `{}`
      aplica color solo a esa palabra/frase; el color final de la línea es el
