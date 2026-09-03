@@ -17,9 +17,15 @@ def build_drawtexts(layout, tmpdir=None, font=None, outline=5, wave=2, wave_hz=1
         from PIL import ImageFont
         ff = ImageFont.truetype(font, ln.size)
         widths = [int(round(ff.getlength(text))) for text, _ in segments]
+        # drawtext posiciona cada segmento desde su borde superior. Para que
+        # palabras con alturas de glifo distintas (p. ej. MAÑANA / FORTNITE)
+        # compartan baseline visual, se alinea su borde inferior al bbox de la
+        # línea completa.
+        heights = [max(1, ff.getbbox(text)[3] - ff.getbbox(text)[1]) for text, _ in segments]
         xbase = f"(w-{sum(widths)})/2"
         offset = 0
         for j, ((text, color), width) in enumerate(zip(segments, widths)):
+            segment_y = ln.y + max(0, ln.height_px - heights[j])
             tf = os.path.join(tmpdir, f"t{i}_{j}.txt")
             with open(tf, "w") as fh:
                 fh.write(text)
@@ -29,6 +35,6 @@ def build_drawtexts(layout, tmpdir=None, font=None, outline=5, wave=2, wave_hz=1
             draws.append(
                 f"drawtext=fontfile={font}:textfile={tf}:fontsize={ln.size}:"
                 f"fontcolor=0x{color}:borderw={outline}:bordercolor=black:"
-                f"x='{xexpr}':y={ln.y}")
+                f"x='{xexpr}':y={segment_y}")
             offset += width
     return draws, tmpdir
