@@ -9,7 +9,8 @@ Cada bloque (1+ lineas) se mide como UNIDAD (bbox) antes de posicionarse.
 Calibracion empirica drawtext: con y=Y las filas van de Y a Y+H-1, donde H es el
 bbox real de la linea medido con PIL (incluye ascendentes/descendentes/italica).
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+import re
 from PIL import ImageFont
 
 
@@ -70,6 +71,8 @@ class TextLine:
     y: int = 0
     width_px: int = 0
     height_px: int = 0
+    # Segmentos [(texto, RRGGBB)]. Sin marcado, es una sola entrada.
+    segments: list = field(default_factory=list)
 
     def h(self, font_path):
         return self.height_px or line_h(font_path, self.text, self.size)
@@ -198,6 +201,35 @@ class Layout:
         return "\n".join(L)
 
 
+def _split_top_level(value):
+    """Separa | solo fuera de {segmentos|COLOR}."""
+    out, cur, depth = [], [], 0
+    for ch in value:
+        if ch == "{": depth += 1
+        elif ch == "}" and depth: depth -= 1
+        if ch == "|" and depth == 0:
+            out.append("".join(cur)); cur = []
+        else:
+            cur.append(ch)
+    out.append("".join(cur))
+    return out
+
+
+def _segments(markup, default_color):
+    """{TEXTO|RRGGBB} colorea solo ese segmento; texto normal usa default."""
+    result, pos = [], 0
+    for m in re.finditer(r"\{([^{}|]+)\|#?([0-9A-Fa-f]{6})\}", markup):
+        if m.start() > pos:
+            result.append((markup[pos:m.start()], default_color))
+        result.append((m.group(1), m.group(2).upper()))
+        pos = m.end()
+    if pos < len(markup):
+        result.append((markup[pos:], default_color))
+    if not result:
+        result = [(markup, default_color)]
+    return [(t, c) for t, c in result if t]
+
+
 def parse_text_spec(path_or_str, default_size=60):
     raw = None
     if path_or_str and "\n" not in path_or_str and "|" not in path_or_str:
@@ -212,8 +244,10 @@ def parse_text_spec(path_or_str, default_size=60):
         ln = ln.strip()
         if not ln:
             continue
-        parts = [p.strip() for p in ln.split("|")]
+        parts = [p.strip() for p in _split_top_level(ln)]
         color = (parts[1] if len(parts) > 1 and parts[1] else "FFFFFF").lstrip("#").upper()
         size = int(parts[2]) if len(parts) > 2 and parts[2] else default_size
-        out.append(TextLine(text=parts[0], color=color, size=size))
+        segs = _segments(parts[0], color)
+        out.append(TextLine(text="".join(t for t, _ in segs), color=color, size=size,
+                            segments=segs))
     return out

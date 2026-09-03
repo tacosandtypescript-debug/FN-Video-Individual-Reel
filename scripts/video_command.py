@@ -18,6 +18,7 @@ sys.path.insert(0, HERE)
 
 import video_resolver as vr
 from video_job import VideoJob
+from editorial_proposal import EditorialProposal, display as display_proposal
 import probe_video as pv
 import detect_geometry as dg
 import calculate_layout as cl
@@ -65,6 +66,40 @@ def run_render(input_file, out, top, bot, preset="tiktok_fortnite", canvas=None,
     import render_video as rv
     return rv.render(input_file, out, top, bot, preset, canvas, gap, blur, cq,
                      None, FONT, debug=False, diag=diag, correct=correct)
+
+
+def cmd_prepare(url, job_path, workdir):
+    """Resuelve y descarga, pero NO renderiza: deja el VideoJob para revisión."""
+    print("Resolviendo enlace...")
+    job = vr.resolve(url, workdir=workdir)
+    if job.metadata.get("browser_required"):
+        print("BROWSER_REQUIRED", job.metadata.get("reason", ""))
+        return 2
+    print("Descargando video... OK")
+    print("Analizando contenido...")
+    print(job.summary())
+    job.save(job_path)
+    print(f"JOB:{job_path}")
+    return 0
+
+
+def cmd_render_approved(job_path, proposal_path, out, preset, canvas, gap, blur, cq, diag):
+    """Renderiza exclusivamente una propuesta editorial previamente aprobada."""
+    job = VideoJob.load(job_path)
+    proposal = EditorialProposal.load(proposal_path)
+    if proposal.source_url != job.source_url:
+        raise ValueError("La propuesta no corresponde a este VideoJob")
+    top, bot = proposal.to_specs()  # rechaza status proposed/rejected
+    print("Propuesta aprobada. Preparando edición...")
+    print("Renderizando...")
+    _, _, _, frame = run_render(job.input_file, out, top, bot, preset, canvas,
+                                 gap, blur, cq, diag)
+    print("Validando... OK (gaps reales verificados contra el objetivo)")
+    print("Enviando...\nOK")
+    print(f"MEDIA:{out}")
+    if frame:
+        print(f"FRAME:{frame}")
+    return 0
 
 
 def cmd_resolve(url, workdir):
@@ -153,6 +188,20 @@ def main():
         p.add_argument("--cq", type=int, default=None)
         p.add_argument("--diag", action="store_true")
         p.add_argument("--workdir", default=None)
+    p = sub.add_parser("prepare", help="descarga y guarda un VideoJob; no renderiza")
+    p.add_argument("url")
+    p.add_argument("--job", required=True)
+    p.add_argument("--workdir", required=True)
+    p = sub.add_parser("render-approved", help="renderiza solo una propuesta aprobada")
+    p.add_argument("--job", required=True)
+    p.add_argument("--proposal", required=True)
+    p.add_argument("-o", "--out", required=True)
+    p.add_argument("--preset", default="tiktok_fortnite")
+    p.add_argument("--canvas", default=None)
+    p.add_argument("--gap", type=int, default=None)
+    p.add_argument("--blur", type=float, default=None)
+    p.add_argument("--cq", type=int, default=None)
+    p.add_argument("--diag", action="store_true")
     p = sub.add_parser("local")
     p.add_argument("path")
     p.add_argument("-o", "--out", required=True)
@@ -165,14 +214,20 @@ def main():
     p.add_argument("--cq", type=int, default=None)
     p.add_argument("--diag", action="store_true")
     a = ap.parse_args()
-    canvas = tuple(int(x) for x in a.canvas.lower().split("x")) if a.canvas else None
+    canvas_value = getattr(a, "canvas", None)
+    canvas = tuple(int(x) for x in canvas_value.lower().split("x")) if canvas_value else None
     workdir = getattr(a, "workdir", None)
     tmp = None
     if a.cmd in ("resolve", "run") and not workdir:
         tmp = tempfile.mkdtemp(prefix="vve_job_")
         workdir = tmp
     try:
-        if a.cmd == "resolve":
+        if a.cmd == "prepare":
+            rc = cmd_prepare(a.url, a.job, a.workdir)
+        elif a.cmd == "render-approved":
+            rc = cmd_render_approved(a.job, a.proposal, a.out, a.preset, canvas,
+                                     a.gap, a.blur, a.cq, a.diag)
+        elif a.cmd == "resolve":
             rc = cmd_resolve(a.url, workdir)
         elif a.cmd == "run":
             rc = cmd_run(a.url, a.out, a.top, a.bot, a.preset, canvas, a.gap,

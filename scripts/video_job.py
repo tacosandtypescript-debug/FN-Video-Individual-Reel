@@ -28,6 +28,11 @@ class VideoJob:
             json.dump(asdict(self), fh, ensure_ascii=False, indent=2)
         return path
 
+    @classmethod
+    def load(cls, path):
+        with open(path, encoding="utf-8") as fh:
+            return cls(**json.load(fh))
+
     def summary(self):
         lines = [
             f"Plataforma: {self.platform}",

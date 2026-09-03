@@ -66,6 +66,46 @@ python3 scripts/render_video.py INPUT.mp4 -o SALIDA.mp4 \
 
 Tras renderizar, `validate_render.py` mide sobre el frame real: si `gap_real_arriba` o `gap_real_abajo` difieren >2px del modelo, corrige el layout y re-renderiza (max 3 intentos). El render se considera OK con gaps reales == modelo (±2px) y zona segura respetada.
 
+## Flujo editorial obligatorio — antes de CUALQUIER render
+
+`/video <URL>` **NO autoriza renderizar directamente**. Tras resolver y descargar,
+el agente debe analizar UNA sola publicación (título, descripción, autor, fecha y
+el video descargado si aporta contexto) y preparar una propuesta editorial.
+
+1. Mostrar siempre, en este orden:
+   - **ORIGINAL**: título y descripción tal como fueron publicados (EN o ES).
+   - **PROPUESTO (ES)**: interpretación noticiosa clara y natural, sin traducción
+     literal rara y sin inventar datos.
+   - **ARRIBA** y **ABAJO**: por defecto ambos bloques existen; 1–2 líneas por
+     bloque. Solo usar un bloque si el usuario lo aprueba expresamente.
+   - **COLORES**: anotar las palabras clave con marcado por segmento:
+     `REGRESA LA {TEMPORADA X|B84DFF}|FFFFFF`. Lo que esté entre `{}` aplica
+     color solo a esa palabra/frase; el color final de la línea es el color por
+     defecto del resto. Usar para nombre, evento, fecha o novedad y dejar el
+     resto blanco. El color debe ayudar a leer, no decorar cada palabra.
+2. Preguntar: **“¿Te gusta esta propuesta? Responde sí para renderizar o dime qué
+   cambio quieres.”** Esperar confirmación explícita. No crear ni enviar MP4 antes
+   de ella.
+3. Al aprobar, guardar `EditorialProposal` con `status=approved`, y solo entonces
+   llamar el render. Una corrección textual genera una propuesta nueva/actualizada
+   antes de renderizar.
+
+Herramientas persistentes:
+
+```text
+video_command.py prepare URL --workdir JOB_DIR --job JOB_DIR/video_job.json
+# resolver + descargar + metadata, sin FFmpeg
+
+editorial_proposal.py
+# valida y guarda bloques arriba/abajo con color
+
+video_command.py render-approved --job JOB.json --proposal PROPUESTA.json -o salida.mp4
+# rechaza propuestas con status distinto de approved
+```
+
+El handler Telegram se limita a orquestar esas dos fases y conservar la ruta del
+Job/Proposal por chat. No contiene FFmpeg ni la lógica editorial.
+
 ## Telegram /video <URL> — one-shot (flujo oficial)
 
 El comando principal es **`/video <URL>`** y significa:
@@ -75,18 +115,17 @@ edítalo automáticamente usando todas las reglas de vertical-video-editor."_
 Flujo (handler de Telegram SOLO orquesta; la lógica vive en los scripts):
 
 ```
-/video URL -> video_command.py run URL -o salida.mp4 [--top] [--bot]
-  1 validar URL                    (invalid_url si no es http/https)
-  2 VideoResolver: detectar plataforma -> yt-dlp PRIMERO (sin navegador)
-      tiktok / x / youtube / instagram / mp4 directo / unknown
-  3 si yt-dlp pide login/privado  -> marcar BROWSER_REQUIRED
-      el AGENTE usa browser_* (Hermes) para resolver y descargar
-  4 cerrar COMPLETAMENTE el navegador antes de renderizar
-      (browser.close + liberar procesos/temporales; nunca render con Chrome abierto)
-  5 guardar metadata (VideoJob -> <salida>.job.json)
-  6 vertical-video-editor: probe -> geometria -> preset -> textos -> FFmpeg -> validar
-  7 enviar video terminado por Telegram (MEDIA:<out>)
+/video URL
+  1 validar y resolver con `video_command.py prepare` (yt-dlp primero)
+  2 descargar y guardar VideoJob + metadata
+  3 analizar publicación y mostrar ORIGINAL + PROPUESTO (ES), arriba/abajo/colores
+  4 ESPERAR aprobación explícita del usuario
+  5 `video_command.py render-approved` -> probe -> geometría -> preset -> FFmpeg -> validar
+  6 enviar video terminado por Telegram (MEDIA:<out>)
 ```
+
+El navegador sigue siendo solo fallback de la fase 1; debe cerrarse por completo
+antes de la fase 3 y jamás permanece abierto durante FFmpeg.
 
 Ejecución desde línea: `python3 scripts/video_command.py run URL -o out.mp4`
 (mensajes de progreso: Resolviendo… Descargando… Analizando… Preparando…
