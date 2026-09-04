@@ -1,0 +1,9 @@
+# Dependencias Python de la skill
+Pillow
+numpy
+
+# Dependencias de sistema (no se instalan con pip)
+# - Python 3.11+
+# - ffmpeg y ffprobe
+# - yt-dlp
+# - NVIDIA NVENC opcional para acelerar el render
