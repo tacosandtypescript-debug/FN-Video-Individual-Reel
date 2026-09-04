@@ -86,7 +86,31 @@ El archivo maestro no se modifica.
 
 Tras renderizar, `validate_render.py` mide sobre el frame real: si `gap_real_arriba` o `gap_real_abajo` difieren >2px del modelo, corrige el layout y re-renderiza (max 3 intentos). El render se considera OK con gaps reales == modelo (±2px) y zona segura respetada.
 
-## Flujo editorial obligatorio — antes de CUALQUIER render
+## Procesamiento de varios videos a la vez
+
+Cada video recibido debe crear un trabajo independiente, identificado por su
+`job_id` y su propia carpeta. Nunca reutilizar rutas, `top.txt`, `bot.txt`,
+`VideoJob`, propuestas, renders, miniaturas o captions de otro trabajo.
+
+```
+video A -> jobs/<id-A>/ -> propuesta A -> render A -> entrega A
+video B -> jobs/<id-B>/ -> propuesta B -> render B -> entrega B
+video C -> jobs/<id-C>/ -> propuesta C -> render C -> entrega C
+```
+
+Mientras un render está activo, se puede resolver otro enlace, extraer sus
+fotogramas, analizarlo y mostrar sus tres propuestas. La respuesta de cada
+aprobación debe conservar el `job_id` correspondiente; aprobar A nunca puede
+renderizar B. Los procesos en segundo plano deben escribir cada salida en su
+propia carpeta y devolver el resultado con su identificador.
+
+Se permiten hasta tres trabajos simultáneos si los recursos lo permiten. Si
+varios renders compiten por la GPU, mantener las fases de descarga/análisis en
+paralelo y limitar solo el número de renders concurrentes para evitar saturar
+VRAM; eso no debe bloquear la recepción ni la revisión editorial de los demás
+videos. Telegram debe enviar cada MP4 solo cuando el resultado de ese mismo
+`job_id` esté validado.
+
 
 `/video <URL>` **NO autoriza renderizar directamente**. Tras resolver y descargar,
 el agente debe analizar UNA sola publicación (título, descripción, autor, fecha y
