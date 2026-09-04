@@ -30,7 +30,11 @@ def main():
     a = ap.parse_args()
     src = Path(a.input); dst = Path(a.output); dst.parent.mkdir(parents=True, exist_ok=True)
     limit = int(a.max_mb * 1024 * 1024)
-    if src.stat().st_size <= limit:
+    source_info = probe(str(src)); source_streams = source_info.get("streams", [])
+    source_video = next(s for s in source_streams if s.get("codec_type") == "video")
+    source_sar_ok = source_video.get("sample_aspect_ratio") == "1:1"
+    source_dar_ok = source_video.get("width", 0) * 16 == source_video.get("height", 0) * 9
+    if src.stat().st_size <= limit and source_sar_ok and source_dar_ok:
         if src.resolve() != dst.resolve(): shutil.copy2(src, dst)
         mode = "copied"
     else:

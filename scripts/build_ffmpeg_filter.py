@@ -55,8 +55,11 @@ def build(video_path, probe, active, layout, out_path, blur=16.0, cq=21,
     fg = fg + mask + rounded + shadow
     draws, tmpdir = btl.build_drawtexts(layout, font=font, outline=outline,
                                         wave=wave, wave_hz=wave_hz)
-    fc = (pre + bg + fg + ov + "[base]" + ",".join(draws) + "[txt];" +
-          "[txt]format=yuv420p[out]")
+    if draws:
+        text_chain = "[base]" + ",".join(draws) + "[txt];[txt]"
+    else:
+        text_chain = "[base]"
+    fc = pre + bg + fg + ov + text_chain + "format=yuv420p[out]"
 
     cmd = ["ffmpeg", "-y", "-v", "error", "-hwaccel", "cuda",
            "-hwaccel_output_format", "cuda", "-i", video_path,

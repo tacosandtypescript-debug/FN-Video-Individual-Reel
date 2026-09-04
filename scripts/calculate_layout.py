@@ -73,6 +73,7 @@ class TextLine:
     height_px: int = 0
     # Segmentos [(texto, RRGGBB)]. Sin marcado, es una sola entrada.
     segments: list = field(default_factory=list)
+    size_explicit: bool = False
 
     def h(self, font_path):
         return self.height_px or line_h(font_path, self.text, self.size)
@@ -263,8 +264,24 @@ def parse_text_spec(path_or_str, default_size=60):
             continue
         parts = [p.strip() for p in _split_top_level(ln)]
         color = (parts[1] if len(parts) > 1 and parts[1] else "FFFFFF").lstrip("#").upper()
-        size = int(parts[2]) if len(parts) > 2 and parts[2] else default_size
+        size_explicit = len(parts) > 2 and bool(parts[2])
+        size = int(parts[2]) if size_explicit else default_size
         segs = _segments(parts[0], color)
         out.append(TextLine(text="".join(t for t, _ in segs), color=color, size=size,
-                            segments=segs))
+                            segments=segs, size_explicit=size_explicit))
     return out
+
+
+def enlarge_short_lines(lines, font_path, safe_width, base_size=60, max_size=84,
+                        target_fraction=0.82):
+    """Aumenta texto corto sin tocar tamaños explícitos ni desbordar safe zone."""
+    if not lines or not font_path:
+        return lines
+    longest = max(line_width(font_path, ln.text, base_size) for ln in lines)
+    if longest <= 0 or longest >= safe_width * target_fraction:
+        return lines
+    target = min(max_size, max(base_size, int(base_size * safe_width * target_fraction / longest)))
+    for ln in lines:
+        if not ln.size_explicit:
+            ln.size = target
+    return lines

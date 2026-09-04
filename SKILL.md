@@ -36,6 +36,10 @@ y los videos nuevos heredan las reglas automaticamente. Entrada desde Telegram: 
    sombra exterior suave para separarlo del background. No dibujar línea, marco ni
    borde visible. El radio, desplazamiento, blur y opacidad viven en el preset;
    deben mantenerse sutiles y no alterar la geometría ni deformar el video.
+10. **Tamaño dinámico del texto**: cuando el texto sea corto, aumentar automáticamente
+    la fuente hasta ocupar aproximadamente el 82% del ancho seguro, con máximo de
+    84 px a 1080×1920. Los tamaños escritos explícitamente en `top.txt` o `bot.txt`
+    siempre se respetan.
 
 ## Pipeline (scripts en `scripts/`)
 
@@ -197,4 +201,3 @@ cd <skill_dir>/references/tests && python3 -m unittest discover -s . -p 'test_*.
 ## Relacion con otras skills
 
 - `fortnite-tiktok-noticias`: usa este motor para sus renders (noticias). Mantiene su flujo editorial (guiones/captions/fuentes X) pero la composicion de video la hace `vertical-video-editor`.
-- `tiktok-video-editing` y `video-short-text-overlay`: LEGACY, no usar para renders nuevos; redirigir aqui.

@@ -5,6 +5,11 @@
   "gap_1080": 32,
   "spacing_1080": 18,
   "font_size_1080": 60,
+  "auto_font": {
+    "enabled": true,
+    "max_size_1080": 84,
+    "target_width_fraction": 0.82
+  },
   "font": "/home/isaac/.local/share/fonts/Barlow-ExtraBoldItalic.ttf",
   "wave": 2,
   "wave_hz": 1.1,

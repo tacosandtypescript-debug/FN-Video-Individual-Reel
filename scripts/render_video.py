@@ -57,6 +57,14 @@ def render(video, out, top_spec, bot_spec, preset_name="tiktok_fortnite",
     active = dg.active_bounds(video, probe)
     top_lines = cl.parse_text_spec(top_spec, default_size=cl.scale_1080(preset["font_size_1080"], ch))
     bot_lines = cl.parse_text_spec(bot_spec, default_size=cl.scale_1080(preset["font_size_1080"], ch))
+    auto_font = preset.get("auto_font", {})
+    if auto_font.get("enabled", True):
+        safe_text_width = cw - int(cw * safe["left_f"]) - int(cw * safe["right_f"])
+        base_fs = cl.scale_1080(preset["font_size_1080"], ch)
+        max_fs = cl.scale_1080(auto_font.get("max_size_1080", 84), ch)
+        fraction = float(auto_font.get("target_width_fraction", 0.82))
+        cl.enlarge_short_lines(top_lines, font, safe_text_width, base_fs, max_fs, fraction)
+        cl.enlarge_short_lines(bot_lines, font, safe_text_width, base_fs, max_fs, fraction)
     layout = cl.Layout(cw, ch, active["w"], active["h"], top_lines, bot_lines,
                        gap, spacing, font, wave, safe)
 
