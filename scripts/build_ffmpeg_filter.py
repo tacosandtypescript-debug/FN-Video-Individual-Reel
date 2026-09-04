@@ -2,12 +2,50 @@
 """build_ffmpeg_filter.py - Ensambla el filter_complex completo.
 
 decode CUDA -> hwdownload -> crop (si barras) -> split -> bg cover+gblur ->
-fg contain -> overlay -> drawtext (unico paso CPU obligatorio) -> NVENC.
+fg contain -> overlay -> drawtext (unico paso CPU obligatorio) -> NVENC/libx264.
 """
+import shutil
 import subprocess
 
 import build_background as bb
 import build_text_layout as btl
+
+
+def cuda_available():
+    """Comprueba de forma barata si hay un driver NVIDIA utilizable."""
+    if not shutil.which("nvidia-smi"):
+        return False
+    try:
+        result = subprocess.run(["nvidia-smi", "-L"], capture_output=True,
+                                text=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    if result.returncode != 0 or not result.stdout.strip():
+        return False
+    try:
+        encoders = subprocess.run(["ffmpeg", "-hide_banner", "-encoders"],
+                                  capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return encoders.returncode == 0 and "h264_nvenc" in (encoders.stdout + encoders.stderr)
+
+
+def _video_encode_args(encode, cq, use_cuda):
+    """Construye flags coherentes para NVENC o para el fallback libx264."""
+    requested = encode.get("vcodec", "h264_nvenc")
+    vcodec = requested
+    if requested.endswith("_nvenc") and not use_cuda:
+        vcodec = encode.get("cpu_vcodec", "libx264")
+    args = ["-c:v", vcodec]
+    if vcodec.endswith("_nvenc"):
+        args += ["-preset", str(encode.get("preset", "p5")),
+                 "-cq", str(cq)]
+    elif vcodec == "libx264":
+        args += ["-preset", str(encode.get("cpu_preset", "medium")),
+                 "-crf", str(cq)]
+    else:
+        args += ["-preset", str(encode.get("preset", "medium"))]
+    return args
 
 
 def _rounded_alpha_expr(w, h, r):
@@ -23,7 +61,11 @@ def _rounded_alpha_expr(w, h, r):
 def build(video_path, probe, active, layout, out_path, blur=16.0, cq=21,
           outline=5, wave=2, wave_hz=1.1, font=None, audio=True,
           fg_radius=18, shadow_enabled=True, shadow_offset=8,
-          shadow_blur=14, shadow_opacity=0.58):
+          shadow_blur=14, shadow_opacity=0.58, encode=None, use_cuda=None):
+    encode = encode or {}
+    requested_vcodec = encode.get("vcodec", "h264_nvenc")
+    if use_cuda is None:
+        use_cuda = requested_vcodec.endswith("_nvenc")
     v = layout.video
     cw, ch = layout.cw, layout.ch
     cover = bb.cover_dims(active["w"], active["h"], cw, ch)
@@ -31,9 +73,11 @@ def build(video_path, probe, active, layout, out_path, blur=16.0, cq=21,
     is_full = (active["x"] == 0 and active["y"] == 0 and
                active["w"] == probe["width"] and active["h"] == probe["height"])
     if is_full:
-        pre = "[0:v]hwdownload,format=nv12[cpu];[cpu]split=2[bg][fg];"
+        decode = "hwdownload,"
+        pre = f"[0:v]{decode if use_cuda else ''}format=nv12[cpu];[cpu]split=2[bg][fg];"
     else:
-        pre = (f"[0:v]hwdownload,format=nv12,crop={active['w']}:{active['h']}:"
+        decode = "hwdownload," if use_cuda else ""
+        pre = (f"[0:v]{decode}format=nv12,crop={active['w']}:{active['h']}:"
                f"{active['x']}:{active['y']},format=nv12,split=2[bg][fg];")
 
     bg = bb.bg_chain(cw, ch, blur)
@@ -59,21 +103,27 @@ def build(video_path, probe, active, layout, out_path, blur=16.0, cq=21,
         text_chain = "[base]" + ",".join(draws) + "[txt];[txt]"
     else:
         text_chain = "[base]"
-    fc = pre + bg + fg + ov + text_chain + "format=yuv420p[out]"
+    pix_fmt = encode.get("pix_fmt", "yuv420p")
+    fc = pre + bg + fg + ov + text_chain + f"format={pix_fmt},setsar=1[out]"
 
-    cmd = ["ffmpeg", "-y", "-v", "error", "-hwaccel", "cuda",
-           "-hwaccel_output_format", "cuda", "-i", video_path,
-           "-filter_complex", fc, "-map", "[out]"]
+    cmd = ["ffmpeg", "-y", "-v", "error"]
+    if use_cuda:
+        cmd += ["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"]
+    cmd += ["-i", video_path, "-filter_complex", fc, "-map", "[out]"]
     if audio:
         cmd += ["-map", "0:a?"]
-    cmd += ["-c:v", "h264_nvenc", "-preset", "p5", "-cq", str(cq),
-            "-pix_fmt", "yuv420p"]
+    cmd += _video_encode_args(encode, cq, use_cuda)
+    cmd += ["-pix_fmt", pix_fmt]
     if audio:
-        cmd += ["-c:a", "aac", "-b:a", "96k"]
+        cmd += ["-c:a", str(encode.get("acodec", "aac")),
+                "-b:a", str(encode.get("audio_bitrate", "96k"))]
     cmd += ["-shortest", "-movflags", "+faststart", out_path]
     return cmd, tmpdir, cover
 
 
 def run(cmd):
-    r = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+    except subprocess.TimeoutExpired as exc:
+        return 124, "ffmpeg agotó el timeout de 3600 segundos: " + str(exc)
     return r.returncode, r.stderr

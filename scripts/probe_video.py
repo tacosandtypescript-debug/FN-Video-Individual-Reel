@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """probe_video.py - Analisis FFprobe del video fuente (regla 6)."""
-import json, subprocess
+import json, os, subprocess
 
 
 def _frac(v):
@@ -20,6 +20,8 @@ def _frac(v):
 
 
 def probe(path):
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"No existe el video: {path}")
     cmd = ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
            "stream=width,height,r_frame_rate,avg_frame_rate,sample_aspect_ratio,"
            "display_aspect_ratio,rotation,codec_name,pix_fmt", "-show_entries",
@@ -27,8 +29,11 @@ def probe(path):
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
         raise RuntimeError("ffprobe fallo: " + r.stderr[-500:])
-    d = json.loads(r.stdout)
-    s = d["streams"][0]
+    try:
+        d = json.loads(r.stdout)
+        s = d["streams"][0]
+    except (json.JSONDecodeError, KeyError, IndexError, TypeError) as exc:
+        raise RuntimeError("ffprobe no devolvió un stream de video válido") from exc
     w, h = int(s["width"]), int(s["height"])
     rot = int(float(s.get("rotation") or 0)) % 360
     if rot in (90, 270):
@@ -45,10 +50,16 @@ def probe(path):
             dar = None
     if not dar:
         dar = (w / h) * sar
+    try:
+        duration = float(d["format"]["duration"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise RuntimeError("El video no tiene una duración válida") from exc
+    if duration <= 0:
+        raise RuntimeError("El video no tiene una duración positiva")
     return {"path": path, "width": int(w), "height": int(h), "rotation": rot,
             "fps": round(fps, 3), "sar": sar, "dar": round(dar, 6),
             "pix_fmt": s.get("pix_fmt", ""), "codec": s.get("codec_name", ""),
-            "duration": float(d["format"]["duration"])}
+            "duration": duration}
 
 
 if __name__ == "__main__":

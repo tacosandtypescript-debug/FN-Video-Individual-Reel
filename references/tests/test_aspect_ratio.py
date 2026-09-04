@@ -20,6 +20,7 @@ class AspectRatioTest(unittest.TestCase):
     def test_wide_full_width(self):
         lay = make_layout(1080, 1920, 1920, 1080)
         self.assertEqual(lay.video.w, 1080)
+        self.assertEqual(lay.video.h, 608)
         self.assertEqual(lay.video.x, 0)
 
     def test_four_three_full_width(self):
@@ -37,6 +38,17 @@ class AspectRatioTest(unittest.TestCase):
         lay = make_layout(720, 1280, 1920, 1080)
         self.assertEqual(lay.video.w, 720)
         self.assertEqual(lay.gap, cl.scale_1080(32, 1280))
+
+    def test_rejects_text_that_cannot_fit(self):
+        top = cl.parse_text_spec("LINEA|FFFFFF|1600")
+        bot = cl.parse_text_spec("CONTEXTO|FFFFFF")
+        with self.assertRaises(ValueError):
+            cl.Layout(1080, 1920, 1080, 1920, top, bot,
+                      gap=32, spacing=18, font_path=FONT)
+
+    def test_rejects_invalid_text_color(self):
+        with self.assertRaises(ValueError):
+            cl.parse_text_spec("LINEA|NOPE")
 
 
 if __name__ == "__main__":

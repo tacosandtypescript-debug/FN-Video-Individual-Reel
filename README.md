@@ -11,7 +11,8 @@ Skill de edición vertical 9:16 para videos de Fortnite y noticias de X/Twitter.
 - Esquinas redondeadas y sombra suave.
 - Texto superior e inferior con colores por segmento.
 - Tamaño automático para textos cortos.
-- Renderizado con FFmpeg y NVENC cuando hay NVIDIA.
+- Renderizado con FFmpeg y NVENC cuando hay NVIDIA, con fallback automático a
+  `libx264` si el entorno no dispone de GPU.
 - Validación de gaps, dimensiones, SAR, DAR, audio y tamaño.
 - Preparación de copia compatible con Telegram.
 - Flujo editorial con tres propuestas antes de renderizar.
@@ -20,7 +21,8 @@ Skill de edición vertical 9:16 para videos de Fortnite y noticias de X/Twitter.
 
 Requiere Python 3.11+, FFmpeg/FFprobe, `yt-dlp`, Pillow y NumPy. Consulta
 `requirements.txt` para las dependencias Python. La GPU NVIDIA es opcional, pero
-si está disponible el render usa `h264_nvenc`.
+si está disponible el render usa `h264_nvenc`; de lo contrario usa el fallback
+CPU configurado en el preset.
 
 ## Render básico
 

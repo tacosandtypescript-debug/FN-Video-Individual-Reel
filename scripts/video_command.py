@@ -18,7 +18,7 @@ sys.path.insert(0, HERE)
 
 import video_resolver as vr
 from video_job import VideoJob
-from editorial_proposal import EditorialProposal, display as display_proposal
+from editorial_proposal import EditorialProposal, EditorialProposalSet, display as display_proposal
 import probe_video as pv
 import detect_geometry as dg
 import calculate_layout as cl
@@ -47,13 +47,13 @@ def auto_split_title(font, title, cw, fs, max_lines=2, max_width_frac=0.62):
     return lines[:max_lines]
 
 
-def ensure_texts(top_spec, bot_spec, title, cw, fs, author=""):
+def ensure_texts(top_spec, bot_spec, title, cw, fs, author="", font=FONT):
     if not top_spec and author and title.startswith(author + " - "):
         title = title[len(author) + 3:]
     if top_spec:
         top = top_spec
     else:
-        lines = auto_split_title(FONT, title, cw, fs)
+        lines = auto_split_title(font, title, cw, fs)
         if not lines:
             raise RuntimeError("Sin titulo y sin --top: imposible generar texto")
         top = "\n".join(lines)
@@ -65,7 +65,12 @@ def run_render(input_file, out, top, bot, preset="tiktok_fortnite", canvas=None,
                gap=None, blur=None, cq=None, diag=False, correct=True):
     import render_video as rv
     return rv.render(input_file, out, top, bot, preset, canvas, gap, blur, cq,
-                     None, FONT, debug=False, diag=diag, correct=correct)
+                     None, None, debug=False, diag=diag, correct=correct)
+
+
+def preset_font(preset_name):
+    import render_video as rv
+    return rv.resolve_font(rv.Preset(preset_name).get("font", FONT))
 
 
 def cmd_prepare(url, job_path, workdir):
@@ -86,7 +91,16 @@ def cmd_prepare(url, job_path, workdir):
 def cmd_render_approved(job_path, proposal_path, out, preset, canvas, gap, blur, cq, diag):
     """Renderiza exclusivamente una propuesta editorial previamente aprobada."""
     job = VideoJob.load(job_path)
-    proposal = EditorialProposal.load(proposal_path)
+    with open(proposal_path, encoding="utf-8") as fh:
+        proposal_data = json.load(fh)
+    if "options" in proposal_data:
+        proposal_set = EditorialProposalSet.load(proposal_path)
+        proposal_set.validate()
+        if proposal_set.selected is None:
+            raise PermissionError("El set editorial todavía no tiene una opción aprobada")
+        proposal = proposal_set.options[proposal_set.selected]
+    else:
+        proposal = EditorialProposal(**proposal_data)
     if proposal.source_url != job.source_url:
         raise ValueError("La propuesta no corresponde a este VideoJob")
     top, bot = proposal.to_specs()  # rechaza status proposed/rejected
@@ -128,13 +142,13 @@ def cmd_run(url, out, top_spec, bot_spec, preset, canvas, gap, blur, cq, diag, w
         print("Preparando edicion...")
         cw = (canvas or (1080, 1920))[0]
         fs = cl.scale_1080(60, (canvas or (1080, 1920))[1])
-        top, bot = ensure_texts(top_spec, bot_spec, job.title, cw, fs, job.author)
+        top, bot = ensure_texts(top_spec, bot_spec, job.title, cw, fs, job.author,
+                                font=preset_font(preset))
         print("Renderizando...")
         layout, _, _, frame = run_render(job.input_file, out, top, bot, preset,
                                          canvas, gap, blur, cq, diag)
         print("Validando... OK (gaps reales verificados contra el objetivo)")
-        print("Enviando...")
-        print("OK")
+        print("Edición lista")
         meta_path = job.save(out + ".job.json")
         print(f"MEDIA:{out}")
         if frame:
@@ -156,7 +170,10 @@ def cmd_local(path, out, top_spec, bot_spec, preset, canvas, gap, blur, cq, diag
         print(f"Analizando contenido: {probe['width']}x{probe['height']}")
         cw = (canvas or (1080, 1920))[0]
         fs = cl.scale_1080(60, (canvas or (1080, 1920))[1])
-        top, bot = ensure_texts(top_spec, bot_spec, os.path.splitext(os.path.basename(path))[0].replace("_", " "), cw, fs)
+        top, bot = ensure_texts(
+            top_spec, bot_spec,
+            os.path.splitext(os.path.basename(path))[0].replace("_", " "),
+            cw, fs, font=preset_font(preset))
         print("Renderizando...")
         layout, _, _, frame = run_render(path, out, top, bot, preset, canvas, gap,
                                          blur, cq, diag)

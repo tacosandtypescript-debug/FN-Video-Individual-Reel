@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 import re
 from PIL import ImageFont
 
+HEX = set("0123456789ABCDEF")
 
 def glyph_h(fs):
     return max(1, round(fs * 0.68))
@@ -35,6 +36,11 @@ def line_width(font_path, text, fs):
     return int(round(ImageFont.truetype(font_path, fs).getlength(text)))
 
 
+def _even_nearest(value, minimum=2):
+    """Redondea a una dimensión par sin introducir un sesgo sistemático."""
+    return max(minimum, int(round(value / 2.0)) * 2)
+
+
 @dataclass
 class VideoBox:
     x: int; y: int; w: int; h: int
@@ -53,13 +59,19 @@ class VideoBox:
 
 
 def video_box(canvas_w, canvas_h, content_w, content_h):
-    s = min(canvas_w / content_w, canvas_h / content_h)
-    w = int(content_w * s)
-    h = int(content_h * s)
-    if w % 2:
-        w -= 1
-    if h % 2:
-        h -= 1
+    if min(canvas_w, canvas_h, content_w, content_h) <= 0:
+        raise ValueError("Las dimensiones del canvas y del video deben ser positivas")
+    max_w = max(2, (canvas_w // 2) * 2)
+    max_h = max(2, (canvas_h // 2) * 2)
+    s = min(max_w / content_w, max_h / content_h)
+    # Redondear al entero par más cercano evita que un 16:9 de 1080x607.5
+    # termine innecesariamente en 1080x606 y pierda más proporción de la debida.
+    w = _even_nearest(content_w * s)
+    h = _even_nearest(content_h * s)
+    while w > max_w:
+        w -= 2
+    while h > max_h:
+        h -= 2
     return VideoBox((canvas_w - w) // 2, (canvas_h - h) // 2, w, h)
 
 
@@ -82,7 +94,7 @@ class TextLine:
 def measure(font_path, lines):
     f = None
     for ln in lines:
-        if f is None or True:
+        if f is None or getattr(f, "size", None) != ln.size:
             f = ImageFont.truetype(font_path, ln.size)
         ln.width_px = int(round(f.getlength(ln.text)))
         bb = f.getbbox(ln.text)
@@ -170,10 +182,19 @@ class Layout:
         if top_lines and bot_lines and self.bot_block.bottom > self.safe_limits["bottom"]:
             max_h = (self.safe_limits["bottom"] - self.safe_limits["top"]
                      - self.top_block.height - self.bot_block.height - 2 * self.gap)
+            if 0 < max_h < 2:
+                raise ValueError("No queda altura suficiente para colocar el video y los textos")
             if max_h > 0 and self.video.h > max_h:
                 scale = max_h / self.video.h
-                nw = max(2, int(self.video.w * scale) // 2 * 2)
-                nh = max(2, int(self.video.h * scale) // 2 * 2)
+                nw = _even_nearest(self.video.w * scale)
+                nh = _even_nearest(self.video.h * scale)
+                # La redondeo puede superar por 1 px el límite seguro cuando
+                # max_h es impar; conservar el ajuste dentro del canvas.
+                if nh > max_h:
+                    nh = max(2, nh - 2)
+                    nw = _even_nearest(self.video.w * (nh / self.video.h))
+                if nw > self.cw:
+                    nw = max(2, nw - 2)
                 self.video = VideoBox((canvas_w - nw) // 2,
                                       self.safe_limits["top"] + self.top_block.height + self.gap,
                                       nw, nh)
@@ -182,13 +203,35 @@ class Layout:
                 self.bot_block = TextBlock(bot_lines, canvas_w, font_path or "", "bottom",
                                            self.video.bottom + self.gap, self.spacing)
         self._clamp_safe()
+        self._validate_text_geometry()
 
     def _clamp_safe(self):
         sl = self.safe_limits
-        if self.top_block.top and self.top_block.top < sl["top"]:
+        if self.top_block.lines and self.top_block.top < sl["top"]:
             self.top_block.shift(sl["top"] - self.top_block.top)
         if self.bot_block.lines and self.bot_block.bottom > sl["bottom"]:
             self.bot_block.shift(sl["bottom"] - self.bot_block.bottom)
+
+    def _validate_text_geometry(self):
+        """Falla de forma explícita cuando el texto no puede caber en el canvas."""
+        safe_width = self.safe_limits["right"] - self.safe_limits["left"]
+        for name, block in (("superior", self.top_block), ("inferior", self.bot_block)):
+            for line in block.lines:
+                if line.width_px > safe_width:
+                    raise ValueError(
+                        f"La línea {name} '{line.text}' supera el ancho seguro "
+                        f"({line.width_px}px > {safe_width}px); reduce su tamaño"
+                    )
+        if self.top_block.lines and self.bot_block.lines:
+            if self.top_block.bottom >= self.bot_block.top:
+                raise ValueError(
+                    "Los bloques de texto se solapan; reduce el tamaño o usa menos líneas"
+                )
+        sl = self.safe_limits
+        if self.top_block.lines and self.top_block.top < sl["top"]:
+            raise ValueError("El bloque superior no cabe en la zona segura")
+        if self.bot_block.lines and self.bot_block.bottom > sl["bottom"]:
+            raise ValueError("El bloque inferior no cabe en la zona segura")
 
     @property
     def gap_top(self):
@@ -263,9 +306,15 @@ def parse_text_spec(path_or_str, default_size=60):
         if not ln:
             continue
         parts = [p.strip() for p in _split_top_level(ln)]
+        if len(parts) > 3:
+            raise ValueError("Formato de texto inválido; usa TEXTO|COLOR|TAMAÑO")
         color = (parts[1] if len(parts) > 1 and parts[1] else "FFFFFF").lstrip("#").upper()
+        if len(color) != 6 or any(c not in HEX for c in color):
+            raise ValueError(f"Color inválido: {color}; usa RRGGBB")
         size_explicit = len(parts) > 2 and bool(parts[2])
         size = int(parts[2]) if size_explicit else default_size
+        if size <= 0:
+            raise ValueError("El tamaño de texto debe ser mayor que cero")
         segs = _segments(parts[0], color)
         out.append(TextLine(text="".join(t for t, _ in segs), color=color, size=size,
                             segments=segs, size_explicit=size_explicit))

@@ -5,12 +5,16 @@ Orden (regla del SKILL): yt-dlp / resolvedor existente PRIMERO; el navegador
 solamente como fallback (lo ejecuta el agente con browser_*, nunca dentro de
 este modulo). Devuelve un VideoJob relleno o marca browser_required.
 """
-import os, re, subprocess, tempfile
+import os, re, shutil, subprocess, tempfile
+from urllib.parse import urlparse
 
 from video_job import VideoJob
+import probe_video as pv
 
-YTDLP = os.path.expanduser("~/.local/bin/yt-dlp")
-DIRECT_EXT = re.compile(r"\.(mp4|mov|webm|m4v|mkv)(\?|$)", re.I)
+YTDLP = shutil.which("yt-dlp") or os.path.expanduser("~/.local/bin/yt-dlp")
+DIRECT_EXT = re.compile(r"\.(mp4|mov|webm|m4v|mkv)$", re.I)
+YTDLP_PROBE_TIMEOUT = 120
+YTDLP_DOWNLOAD_TIMEOUT = 1800
 
 
 class ResolverError(Exception):
@@ -20,18 +24,21 @@ class ResolverError(Exception):
 
 
 def detect_platform(url):
-    u = url.lower()
-    if not (url.startswith("http://") or url.startswith("https://")):
+    parsed = urlparse(url)
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
         return "invalid"
-    if DIRECT_EXT.search(u):
+    host = parsed.hostname.lower().removeprefix("www.")
+    if DIRECT_EXT.search(parsed.path):
         return "direct"
-    if "tiktok.com" in u:
+    if host == "tiktok.com" or host.endswith(".tiktok.com"):
         return "tiktok"
-    if "x.com" in u or "twitter.com" in u:
+    if (host == "x.com" or host.endswith(".x.com") or
+            host == "twitter.com" or host.endswith(".twitter.com")):
         return "x"
-    if "youtube.com" in u or "youtu.be" in u:
+    if (host == "youtube.com" or host.endswith(".youtube.com") or
+            host == "youtu.be"):
         return "youtube"
-    if "instagram.com" in u:
+    if host == "instagram.com" or host.endswith(".instagram.com"):
         return "instagram"
     return "unknown"
 
@@ -39,7 +46,14 @@ def detect_platform(url):
 def _ytdlp(args):
     if not os.path.exists(YTDLP):
         raise ResolverError("no_ytdlp", f"yt-dlp no encontrado en {YTDLP}")
-    r = subprocess.run([YTDLP] + args, capture_output=True, text=True)
+    timeout = YTDLP_PROBE_TIMEOUT if "--dump-single-json" in args else YTDLP_DOWNLOAD_TIMEOUT
+    try:
+        r = subprocess.run([YTDLP] + args, capture_output=True, text=True,
+                           timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        raise ResolverError("timeout", f"yt-dlp agotó el timeout de {timeout}s") from exc
+    except OSError as exc:
+        raise ResolverError("no_ytdlp", f"No se pudo ejecutar yt-dlp: {exc}") from exc
     return r
 
 
@@ -52,7 +66,7 @@ def _parse_duration(d):
 
 def probe_remote(url):
     """Metadata sin descargar. Devuelve (meta_dict, browser_required:bool, razon)."""
-    r = _ytdlp(["--dump-single-json", "--skip-download", url])
+    r = _ytdlp(["--no-playlist", "--dump-single-json", "--skip-download", url])
     if r.returncode == 0:
         import json
         try:
@@ -75,7 +89,8 @@ def download(url, dest_dir=None, max_height=1080):
     os.makedirs(dest_dir, exist_ok=True)
     out_tpl = os.path.join(dest_dir, "original.%(ext)s")
     fmt = f"bv*[height<={max_height}]+ba/b[height<={max_height}]"
-    r = _ytdlp(["-f", fmt, "--merge-output-format", "mp4", "-o", out_tpl, url])
+    r = _ytdlp(["--no-playlist", "-f", fmt, "--merge-output-format", "mp4",
+                "-o", out_tpl, url])
     if r.returncode != 0:
         raise ResolverError("download_failed", "yt-dlp: " + r.stderr[-500:])
     for name in os.listdir(dest_dir):
@@ -112,18 +127,10 @@ def resolve(url, workdir=None):
     os.makedirs(job.workdir, exist_ok=True)
     path, _ = download(url, dest_dir=job.workdir)
     job.input_file = path
-    # resolucion/fps reales del archivo
-    import json, subprocess
-    pr = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0",
-                         "-show_entries", "stream=width,height,r_frame_rate",
-                         "-of", "json", path], capture_output=True, text=True)
+    # Resolución/fps reales del archivo y validación temprana de integridad.
     try:
-        st = json.loads(pr.stdout)["streams"][0]
-        job.width, job.height = int(st["width"]), int(st["height"])
-        fr = st.get("r_frame_rate", "")
-        if "/" in fr:
-            a, b = fr.split("/")
-            job.fps = round(float(a) / float(b), 3) if float(b) else 0.0
-    except Exception:
-        pass
+        actual = pv.probe(path)
+    except (OSError, RuntimeError) as exc:
+        raise ResolverError("probe_failed", str(exc)) from exc
+    job.width, job.height, job.fps = actual["width"], actual["height"], actual["fps"]
     return job

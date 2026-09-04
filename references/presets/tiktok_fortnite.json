@@ -32,7 +32,9 @@
   },
   "encode": {
     "vcodec": "h264_nvenc",
+    "cpu_vcodec": "libx264",
     "preset": "p5",
+    "cpu_preset": "medium",
     "cq": 21,
     "pix_fmt": "yuv420p",
     "acodec": "aac",

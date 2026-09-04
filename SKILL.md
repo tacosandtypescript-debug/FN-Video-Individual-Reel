@@ -1,10 +1,7 @@
 ---
 name: vertical-video-editor
 description: "Use when /video or vertical 9:16 video edit with FFmpeg."
-version: 1.0.0
-author: Hermes Agent
 license: MIT
-platforms: [linux, macos]
 metadata:
   hermes:
     tags: [ffmpeg, vertical, video, tiktok, reels, geometria, cover, "/video"]
@@ -40,6 +37,10 @@ y los videos nuevos heredan las reglas automaticamente. Entrada desde Telegram: 
     la fuente hasta ocupar aproximadamente el 82% del ancho seguro, con máximo de
     84 px a 1080×1920. Los tamaños escritos explícitamente en `top.txt` o `bot.txt`
     siempre se respetan.
+11. **Color por palabra**: cada segmento de acento debe marcar exactamente una palabra
+    con el formato `{PALABRA|RRGGBB}`. Una propuesta puede usar como máximo tres
+    colores de acento distintos; `FFFFFF` es el color base y no cuenta. No colorear
+    frases de varias palabras ni líneas completas por decoración.
 
 ## Pipeline (scripts en `scripts/`)
 
@@ -50,7 +51,7 @@ probe_video.py        FFprobe: width/height/DAR/SAR/rotation/fps/duration/pix_fm
   -> build_background.py  cadena cover + crop centrado + gblur
   -> build_text_layout.py drawtext por linea (fuente/color/tamano del preset)
   -> build_ffmpeg_filter.py filter_complex completo (bg + fg + overlay + texto)
-  -> render_video.py      CLI: preset + override por flag + render NVENC
+  -> render_video.py      CLI: preset + override por flag + render NVENC/CPU
   -> prepare_telegram.py  comprueba tamaño/DAR/SAR/audio y crea copia Telegram si hace falta
 ```
 
@@ -77,7 +78,8 @@ python3 scripts/prepare_telegram.py RENDER.mp4 -o RENDER_tg.mp4
 ```
 
 Si el archivo pesa como máximo 45 MB, lo conserva. Si supera ese tamaño, genera
-una copia 720×1280 con `setsar=1`, DAR 9:16, audio AAC y NVENC. Después verifica
+una copia 720×1280 con `setsar=1`, DAR 9:16, audio AAC y NVENC (o libx264 si no
+hay GPU). Después verifica
 codec streams, dimensiones, SAR, proporción, duración y tamaño antes de entregar.
 El archivo maestro no se modifica.
 
@@ -90,26 +92,75 @@ Tras renderizar, `validate_render.py` mide sobre el frame real: si `gap_real_arr
 el agente debe analizar UNA sola publicación (título, descripción, autor, fecha y
 el video descargado si aporta contexto) y preparar una propuesta editorial.
 
+### Método para proponer títulos
+
+Antes de redactar, separar la publicación en cuatro datos: **hecho** (qué ocurre),
+**mecánica** (cómo ocurre), **resultado** (qué consigue el jugador) y **contexto**
+(mapa, modo, fecha o condición). Si un dato no está confirmado por el post o el
+video, no convertirlo en una afirmación.
+
+Las tres propuestas deben tener ángulos editoriales realmente distintos:
+
+- **RESULTADO**: el beneficio o efecto cuantificable para el jugador.
+- **MECÁNICA**: la acción o elemento que explica cómo sucede.
+- **CONTEXTO/NOVEDAD**: dónde ocurre, en qué modo o por qué es relevante ahora.
+
+No hacer tres versiones con sinónimos del mismo título. Cada opción debe poder
+publicarse por separado y ARRIBA + ABAJO debe leerse como una sola frase natural.
+Usar un verbo concreto y un dato específico. Como guía visual, buscar 3–7 palabras
+por línea, una idea principal por bloque y cero relleno.
+
+Evitar comienzos y adjetivos vacíos como `MIRA`, `INCREÍBLE`, `BRUTAL`, `NO TE LO
+PIERDAS`, `EL MEJOR`, `SECRETO`, `VIRAL` u `OMG`, salvo que sean parte de una cita o
+de un hecho verificable. No copiar el titular original, traducirlo literalmente,
+añadir hashtags, repetir `Fortnite` sin necesidad ni prometer un resultado que la
+fuente no demuestra.
+
+Ejemplo de estructura correcta para el caso de XP:
+
+```text
+OPCIÓN 1 — RESULTADO
+ARRIBA: SUBE {5|B84DFF} NIVELES DE XP|FFFFFF
+ABAJO: EN UNA SOLA PARTIDA|FFFFFF
+
+OPCIÓN 2 — MECÁNICA
+ARRIBA: ROMPE {ESTRUCTURAS|FFDD00}|FFFFFF
+ABAJO: CON GRANADAS DE ONDA DE CHOQUE|FFFFFF
+
+OPCIÓN 3 — CONTEXTO/NOVEDAD
+ARRIBA: NUEVO {GLITCH|42E8FF} DE XP|FFFFFF
+ABAJO: EN REALITY'S REIGN|FFFFFF
+```
+
+Antes de mostrar las opciones, hacer una lectura de control: quitar cada bloque
+por separado, leerlo en voz alta, comprobar que no falta el sujeto o el verbo,
+confirmar el dato contra ORIGINAL/ANÁLISIS y verificar que las tres opciones no
+repiten la misma promesa.
+
 1. Mostrar siempre, en este orden:
    - **ORIGINAL**: título y descripción tal como fueron publicados (EN o ES).
-   - **ANÁLISIS**: qué comunica realmente el post y el video; interpretar el
-     contexto antes de escribir, sin copiar/traducir literalmente ni inventar.
+   - **ANÁLISIS**: qué comunica realmente el post y el video; resumir hecho,
+     mecánica, resultado y contexto antes de escribir, sin copiar/traducir
+     literalmente ni inventar. Si el video no permite confirmar una afirmación,
+     indicarlo y redactar el título con el nivel de certeza disponible.
    - **3 PROPUESTAS (ES)**, independientes, naturales y noticiosas. Cada una
      tiene por defecto un bloque **ARRIBA** y otro **ABAJO** (1–2 líneas por
      bloque). La lectura ARRIBA + ABAJO debe formar una idea completa:
      **arriba nombra el hecho principal y abajo añade el dato que lo completa**
-     (qué cambia, cuándo, dónde o para quién). Está prohibido reformular el
+     (qué cambia, cuándo, dónde o para quién). Aplicar los tres ángulos RESULTADO,
+     MECÁNICA y CONTEXTO/NOVEDAD definidos arriba. Está prohibido reformular el
      mismo título dos veces, intercambiar palabras sin sentido o usar frases
      que no se entiendan aisladas. Antes de mostrarlas, comprobar: (a) se
-     entienden en español natural, (b) son fieles a la publicación, (c) no
-     repiten la misma información y (d) el gancho no es clickbait falso.
+     entienden en español natural, (b) tienen verbo y dato concreto, (c) son fieles
+     a la publicación, (d) no repiten la misma información y (e) el gancho no es
+     clickbait falso.
      Solo ofrecer un bloque único si el post de verdad no necesita contexto extra.
-   - **COLORES**: anotar solo palabras/frases informativas con marcado por
-     segmento: `REGRESA LA {TEMPORADA X|B84DFF}|FFFFFF`. Lo que esté entre `{}`
-     aplica color solo a esa palabra/frase; el color final de la línea es el
-     color por defecto del resto. Elegir color por significado: nombre/evento,
-     novedad, fecha o dato clave. Nunca pintar toda la línea sin razón ni usar
-     color como decoración.
+   - **COLORES**: anotar solo palabras informativas con marcado por segmento:
+     `REGRESA LA {TEMPORADA|B84DFF}|FFFFFF`. Lo que esté entre `{}` debe ser una
+     sola palabra y recibe un único color. Usar como máximo tres colores de acento
+     distintos por propuesta; `FFFFFF` es el color base y no cuenta. Elegir color
+     por significado: nombre/evento, novedad, fecha o dato clave. Nunca colorear
+     frases de varias palabras ni pintar toda la línea como decoración.
 2. Presentar las tres opciones como botones inline de Telegram mediante
    `clarify` (una sola pregunta, elecciones: **OPCIÓN 1**, **OPCIÓN 2**,
    **OPCIÓN 3**). El texto previo debe mostrar arriba/abajo y las palabras de
