@@ -10,7 +10,9 @@ Calibracion empirica drawtext: con y=Y las filas van de Y a Y+H-1, donde H es el
 bbox real de la linea medido con PIL (incluye ascendentes/descendentes/italica).
 """
 from dataclasses import dataclass, field
+from copy import deepcopy
 import re
+import unicodedata
 from PIL import ImageFont
 
 HEX = set("0123456789ABCDEF")
@@ -96,7 +98,13 @@ def measure(font_path, lines):
     for ln in lines:
         if f is None or getattr(f, "size", None) != ln.size:
             f = ImageFont.truetype(font_path, ln.size)
-        ln.width_px = int(round(f.getlength(ln.text)))
+        # Segmented drawtext is positioned as the sum of its segment widths;
+        # measure the same geometry instead of relying on whole-string kerning.
+        if ln.segments:
+            ln.width_px = sum(int(round(f.getlength(text)))
+                              for text, _ in ln.segments)
+        else:
+            ln.width_px = int(round(f.getlength(ln.text)))
         bb = f.getbbox(ln.text)
         ln.height_px = max(1, bb[3] - bb[1])
     return lines
@@ -157,7 +165,8 @@ class TextBlock:
 
 class Layout:
     def __init__(self, canvas_w, canvas_h, content_w, content_h, top_lines, bot_lines,
-                 gap=None, spacing=None, font_path=None, wave=0, safe=None):
+                 gap=None, spacing=None, font_path=None, wave=0, safe=None,
+                 text_padding=0):
         self.cw, self.ch = canvas_w, canvas_h
         self.gap = gap if gap is not None else scale_1080(32, canvas_h)
         self.spacing = spacing if spacing is not None else scale_1080(18, canvas_h)
@@ -167,43 +176,66 @@ class Layout:
             measure(font_path, top_lines)
             measure(font_path, bot_lines)
         s = safe or {"left_f": 0.056, "right_f": 0.056, "top_f": 0.0725, "bottom_f": 0.174}
-        self.safe_limits = {"left": int(canvas_w * s["left_f"]),
-                            "right": canvas_w - int(canvas_w * s["right_f"]),
-                            "top": int(canvas_h * s["top_f"]),
-                            "bottom": canvas_h - int(canvas_h * s["bottom_f"])}
+        padding = max(0, int(text_padding))
+        self.safe_limits = {
+            "left": int(canvas_w * s["left_f"]) + padding,
+            "right": canvas_w - int(canvas_w * s["right_f"]) - padding,
+            "top": int(canvas_h * s["top_f"]) + padding,
+            "bottom": canvas_h - int(canvas_h * s["bottom_f"]) - padding,
+        }
         self.video = video_box(canvas_w, canvas_h, content_w, content_h)
         self.top_block = TextBlock(top_lines, canvas_w, font_path or "", "top",
                                    self.video.top - self.gap, self.spacing)
         self.bot_block = TextBlock(bot_lines, canvas_w, font_path or "", "bottom",
                                    self.video.bottom + self.gap, self.spacing)
-        # En fuentes verticales, contain puede ocupar casi todo el canvas y no
-        # dejar sitio a los dos bloques. Se reduce el video proporcionalmente,
-        # conservando AR, hasta que texto + gaps caben en safe zone.
-        if top_lines and bot_lines and self.bot_block.bottom > self.safe_limits["bottom"]:
-            max_h = (self.safe_limits["bottom"] - self.safe_limits["top"]
-                     - self.top_block.height - self.bot_block.height - 2 * self.gap)
-            if 0 < max_h < 2:
-                raise ValueError("No queda altura suficiente para colocar el video y los textos")
-            if max_h > 0 and self.video.h > max_h:
-                scale = max_h / self.video.h
-                nw = _even_nearest(self.video.w * scale)
-                nh = _even_nearest(self.video.h * scale)
-                # La redondeo puede superar por 1 px el límite seguro cuando
-                # max_h es impar; conservar el ajuste dentro del canvas.
-                if nh > max_h:
-                    nh = max(2, nh - 2)
-                    nw = _even_nearest(self.video.w * (nh / self.video.h))
-                if nw > self.cw:
-                    nw = max(2, nw - 2)
-                self.video = VideoBox((canvas_w - nw) // 2,
-                                      self.safe_limits["top"] + self.top_block.height + self.gap,
-                                      nw, nh)
-                self.top_block = TextBlock(top_lines, canvas_w, font_path or "", "top",
-                                           self.video.top - self.gap, self.spacing)
-                self.bot_block = TextBlock(bot_lines, canvas_w, font_path or "", "bottom",
-                                           self.video.bottom + self.gap, self.spacing)
+        self._fit_video_to_text(top_lines, bot_lines, font_path or "")
         self._clamp_safe()
         self._validate_text_geometry()
+
+    def _fit_video_to_text(self, top_lines, bot_lines, font_path):
+        """Fit the foreground in the vertical corridor left by the text.
+
+        The old implementation only reduced a vertical source when *both* text
+        blocks existed.  A source with just a top or bottom caption therefore
+        kept a full-height foreground and the safe-zone clamp moved the caption
+        on top of it.  Treating each block independently keeps the text anchored
+        to the video for every valid combination of top/bottom text.
+        """
+        top_h = self.top_block.height if top_lines else 0
+        bot_h = self.bot_block.height if bot_lines else 0
+        min_video_top = (self.safe_limits["top"] + top_h + self.gap
+                         if top_lines else 0)
+        max_video_bottom = (self.safe_limits["bottom"] - bot_h - self.gap
+                            if bot_lines else self.ch)
+        max_video_h = max_video_bottom - min_video_top
+        if (top_lines or bot_lines) and max_video_h < 2:
+            raise ValueError("No queda altura suficiente para colocar el video y los textos")
+
+        old = self.video
+        if top_lines or bot_lines:
+            if old.h > max_video_h:
+                scale = max_video_h / old.h
+                nh = _even_nearest(old.h * scale)
+                nw = _even_nearest(old.w * scale)
+                # The even-pixel rounding must not cross the text corridor.
+                while nh > max_video_h:
+                    nh -= 2
+                while nw > self.cw:
+                    nw -= 2
+                if nh < 2 or nw < 2:
+                    raise ValueError("No queda altura suficiente para el video")
+                y = min_video_top
+            else:
+                nw, nh = old.w, old.h
+                y = min(max(old.y, min_video_top), max_video_bottom - nh)
+            self.video = VideoBox((self.cw - nw) // 2, y, nw, nh)
+
+        # Re-anchor both blocks after any size/position change.  In particular,
+        # this restores the exact configured gap after a constrained fit.
+        self.top_block = TextBlock(top_lines, self.cw, font_path, "top",
+                                   self.video.top - self.gap, self.spacing)
+        self.bot_block = TextBlock(bot_lines, self.cw, font_path, "bottom",
+                                   self.video.bottom + self.gap, self.spacing)
 
     def _clamp_safe(self):
         sl = self.safe_limits
@@ -295,7 +327,8 @@ def parse_text_spec(path_or_str, default_size=60):
     raw = None
     if path_or_str and "\n" not in path_or_str and "|" not in path_or_str:
         try:
-            raw = open(path_or_str).read()
+            with open(path_or_str, encoding="utf-8") as fh:
+                raw = fh.read()
         except OSError:
             raw = path_or_str
     else:
@@ -321,6 +354,22 @@ def parse_text_spec(path_or_str, default_size=60):
     return out
 
 
+def normalize_copy_lines(lines):
+    """Normalize renderable lines to uppercase without accents/diacritics."""
+    for line in lines or []:
+        line.segments = [
+            ("".join(
+                ch for ch in unicodedata.normalize("NFKD", text or "")
+                if not unicodedata.combining(ch)
+            ).upper(), color)
+            for text, color in (line.segments or [(line.text, line.color)])
+            if text
+        ]
+        line.text = "".join(text for text, _ in line.segments)
+        line.color = line.color.upper()
+    return lines
+
+
 def enlarge_short_lines(lines, font_path, safe_width, base_size=60, max_size=84,
                         target_fraction=0.82):
     """Aumenta texto corto sin tocar tamaños explícitos ni desbordar safe zone."""
@@ -334,3 +383,239 @@ def enlarge_short_lines(lines, font_path, safe_width, base_size=60, max_size=84,
         if not ln.size_explicit:
             ln.size = target
     return lines
+
+
+def _segments_for_slice(segments, start, end):
+    """Keep the original word colors for a substring of a TextLine."""
+    if not segments:
+        return []
+    result = []
+    cursor = 0
+    for text, color in segments:
+        segment_start = max(start, cursor)
+        segment_end = min(end, cursor + len(text))
+        if segment_end > segment_start:
+            piece = text[segment_start - cursor:segment_end - cursor]
+            if piece:
+                if result and result[-1][1] == color:
+                    result[-1] = (result[-1][0] + piece, color)
+                else:
+                    result.append((piece, color))
+        cursor += len(text)
+    return result
+
+
+def _wrapped_ranges(text, font_path, size, max_width, segments=None):
+    """Return character ranges whose rendered widths never exceed max_width."""
+    if max_width <= 0:
+        raise ValueError("El ancho seguro debe ser mayor que cero")
+    visible = text.strip()
+    if not visible:
+        return []
+    left = text.find(visible)
+    right = left + len(visible)
+    font = ImageFont.truetype(font_path, size)
+
+    def width(value, start=None, end=None):
+        if segments is not None and start is not None and end is not None:
+            pieces = _segments_for_slice(segments, start, end)
+            return int(round(sum(font.getlength(piece) for piece, _ in pieces)))
+        return int(round(font.getlength(value)))
+
+    ranges = []
+    current_start = current_end = None
+    for match in re.finditer(r"\S+", text[left:right]):
+        token_start = left + match.start()
+        token_end = left + match.end()
+        token = text[token_start:token_end]
+        if width(token, token_start, token_end) > max_width:
+            if current_start is not None:
+                ranges.append((current_start, current_end))
+                current_start = current_end = None
+            # A single unbreakable token still cannot be allowed to overflow.
+            # Split it at a character boundary only as the last resort.
+            cursor = token_start
+            while cursor < token_end:
+                end = cursor + 1
+                while (end < token_end and
+                       width(text[cursor:end + 1], cursor, end + 1) <= max_width):
+                    end += 1
+                ranges.append((cursor, end))
+                cursor = end
+            continue
+        if current_start is None:
+            current_start, current_end = token_start, token_end
+        elif width(text[current_start:token_end], current_start, token_end) <= max_width:
+            current_end = token_end
+        else:
+            ranges.append((current_start, current_end))
+            current_start, current_end = token_start, token_end
+    if current_start is not None:
+        ranges.append((current_start, current_end))
+    return ranges
+
+
+def _line_slice(line, start, end):
+    """Create a TextLine for a range produced by _wrapped_ranges."""
+    raw = line.text[start:end]
+    text = raw.strip()
+    if not text:
+        return None
+    leading = len(raw) - len(raw.lstrip())
+    trailing = len(raw.rstrip())
+    actual_start = start + leading
+    actual_end = start + trailing
+    segments = _segments_for_slice(line.segments, actual_start, actual_end)
+    return TextLine(
+        text=text,
+        color=line.color,
+        size=line.size,
+        segments=segments,
+        size_explicit=line.size_explicit,
+    )
+
+
+def wrap_text_lines(lines, font_path, max_width):
+    """Wrap every logical line to the safe width, preserving color segments."""
+    result = []
+    for line in lines or []:
+        measure(font_path, [line])
+        width = line.width_px
+        if width <= max_width:
+            result.append(line)
+            continue
+        for start, end in _wrapped_ranges(
+                line.text, font_path, line.size, max_width, line.segments):
+            sliced = _line_slice(line, start, end)
+            if sliced:
+                result.append(sliced)
+    return measure(font_path, result)
+
+
+def _ellipsis_line(line, font_path, max_width):
+    """Trim one line and append an ellipsis without crossing max_width."""
+    suffix = " …"
+    text = line.text.strip()
+    font = ImageFont.truetype(font_path, line.size)
+    while text and int(round(font.getlength(text + suffix))) > max_width:
+        text = text[:-1].rstrip()
+    if not text:
+        text = "…"
+        suffix = ""
+    visible = text + suffix
+    segments = _segments_for_slice(line.segments, 0, len(text))
+    if segments:
+        segments.append((suffix, line.color))
+    else:
+        segments = [(visible, line.color)]
+    return TextLine(
+        text=visible,
+        color=line.color,
+        size=line.size,
+        segments=[(piece, color) for piece, color in segments if piece],
+        size_explicit=line.size_explicit,
+    )
+
+
+def truncate_text_lines(lines, max_lines, font_path, max_width):
+    """Keep a block inside a line budget and make truncation explicit."""
+    if max_lines <= 0:
+        return []
+    if len(lines) <= max_lines:
+        return list(lines)
+    kept = list(lines[:max_lines])
+    kept[-1] = _ellipsis_line(kept[-1], font_path, max_width)
+    return measure(font_path, kept)
+
+
+def fit_text_blocks(top_lines, bot_lines, canvas_w, canvas_h, content_w, content_h,
+                    font_path, gap, spacing, safe, min_size=28, text_padding=0):
+    """Fit both text blocks to safe zones before creating the final Layout.
+
+    The function first wraps long lines, then progressively reduces the
+    requested sizes only if the two blocks leave no vertical corridor for the
+    video. As a final guard it truncates with an ellipsis. This makes the safe
+    zone a hard invariant for long user/provider copy instead of an exception
+    that can reach FFmpeg or a caption drawn outside the canvas.
+    """
+    raw_top = deepcopy(top_lines or [])
+    raw_bot = deepcopy(bot_lines or [])
+    padding = max(0, int(text_padding))
+    max_width = (
+        canvas_w - int(canvas_w * safe["left_f"])
+        - int(canvas_w * safe["right_f"]) - 2 * padding
+    )
+    if max_width <= 0:
+        raise ValueError("La zona segura no deja ancho para el texto")
+    min_size = max(1, int(min_size))
+    all_sizes = [line.size for line in raw_top + raw_bot]
+    largest = max(all_sizes or [min_size])
+    min_ratio = min(1.0, min_size / max(1, largest))
+    ratios = [1.0 - (0.05 * index) for index in range(13)]
+    if min_ratio not in ratios:
+        ratios.append(min_ratio)
+    ratios = sorted({max(min_ratio, ratio) for ratio in ratios}, reverse=True)
+
+    def scaled(lines, ratio):
+        result = deepcopy(lines)
+        for line in result:
+            line.size = max(min_size, int(round(line.size * ratio)))
+        return result
+
+    def attempt(ratio, top_limit=None, bot_limit=None):
+        top = wrap_text_lines(scaled(raw_top, ratio), font_path, max_width)
+        bot = wrap_text_lines(scaled(raw_bot, ratio), font_path, max_width)
+        if top_limit is not None:
+            top = truncate_text_lines(top, top_limit, font_path, max_width)
+        if bot_limit is not None:
+            bot = truncate_text_lines(bot, bot_limit, font_path, max_width)
+        return make_layout(top, bot)
+
+    def make_layout(top, bot):
+        try:
+            layout = Layout(
+                canvas_w, canvas_h, content_w, content_h, top, bot,
+                gap=gap, spacing=spacing, font_path=font_path,
+                safe=safe, text_padding=padding,
+            )
+        except ValueError:
+            return None
+        return top, bot, layout
+
+    for ratio in ratios:
+        result = attempt(ratio)
+        if result is not None:
+            return result
+
+    # If both blocks are still too tall, preserve as many wrapped lines as the
+    # safe corridor can hold and mark the cut. Prefer keeping both blocks.
+    minimum_total = (1 if raw_top else 0) + (1 if raw_bot else 0)
+    min_top_lines = wrap_text_lines(scaled(raw_top, min_ratio), font_path, max_width)
+    min_bot_lines = wrap_text_lines(scaled(raw_bot, min_ratio), font_path, max_width)
+    widest_top = len(min_top_lines)
+    widest_bot = len(min_bot_lines)
+    min_font = ImageFont.truetype(font_path, min_size)
+    min_line_height = max(1, min_font.getbbox("Ag")[3] - min_font.getbbox("Ag")[1])
+    safe_height = (canvas_h - int(canvas_h * safe["bottom_f"])
+                   - padding - (int(canvas_h * safe["top_f"]) + padding))
+    # Conservative maximum number of visual rows available when the video has
+    # already reached its smallest useful size. This prevents a huge paragraph
+    # from making the fallback loop quadratic.
+    max_total = max(
+        minimum_total,
+        (max(1, safe_height - 2 * gap - 2 + 2 * spacing)
+         // max(1, min_line_height + spacing)),
+    )
+    for total in range(min(widest_top + widest_bot, max_total), minimum_total - 1, -1):
+        top_min = 1 if raw_top else 0
+        bot_min = 1 if raw_bot else 0
+        for top_limit in range(min(widest_top, total), top_min - 1, -1):
+            bot_limit = total - top_limit
+            if bot_limit < bot_min or bot_limit > widest_bot:
+                continue
+            top = truncate_text_lines(min_top_lines, top_limit, font_path, max_width)
+            bot = truncate_text_lines(min_bot_lines, bot_limit, font_path, max_width)
+            result = make_layout(top, bot)
+            if result is not None:
+                return result
+    raise ValueError("El texto no cabe en la zona segura ni con ajuste automático")

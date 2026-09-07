@@ -44,7 +44,10 @@ TEXTO CON {PALABRA|00E5FF}|FFFFFF
 ```
 
 El marcado de color solo puede aplicarse a una palabra. El archivo de propuesta
-debe tener `status: approved` para poder renderizarse.
+debe tener `status: approved` para poder renderizarse. El bot aplica la paleta
+semántica del preset (hasta cuatro acentos) únicamente a palabras informativas;
+artículos, preposiciones y conjunciones permanecen blancas. Si una línea supera
+la safe zone, el renderer la envuelve, reduce o trunca con `…` antes de dibujarla.
 
 ## 4. Renderizar una propuesta aprobada
 
@@ -56,7 +59,8 @@ python3 scripts/video_command.py render-approved \
 ```
 
 El render usa el preset `tiktok_fortnite`, fondo blur cover, video central sin
-deformar, esquinas redondeadas, sombra suave y textos anclados al video.
+deformar, esquinas redondeadas, sombra suave, firma `CODIGO: KHETZALGG` como
+texto ligero centrado abajo y textos anclados al video.
 
 ## 5. Render directo con archivos de texto
 

@@ -66,6 +66,7 @@ def render(video, out, top_spec, bot_spec, preset_name="tiktok_fortnite",
            canvas=None, gap=None, blur=None, cq=None, wave=None, font=None,
            debug=False, diag=False, correct=True, max_iter=3):
     preset = Preset(preset_name)
+    os.makedirs(os.path.dirname(os.path.abspath(out)) or ".", exist_ok=True)
     cw, ch = canvas or tuple(preset["canvas"])
     gap = gap if gap is not None else cl.scale_1080(preset["gap_1080"], ch)
     spacing = cl.scale_1080(preset["spacing_1080"], ch)
@@ -74,6 +75,7 @@ def render(video, out, top_spec, bot_spec, preset_name="tiktok_fortnite",
     wave = wave if wave is not None else preset["wave"]
     font = resolve_font(font or preset["font"])
     outline = preset["outline"]
+    outline_color = preset.get("outline_color", "black")
     wave_hz = preset["wave_hz"]
     fg_radius = cl.scale_1080(preset.get("foreground_corner_radius_1080", 18), ch)
     fg_shadow = preset.get("foreground_shadow", {})
@@ -81,6 +83,18 @@ def render(video, out, top_spec, bot_spec, preset_name="tiktok_fortnite",
     shadow_offset = cl.scale_1080(fg_shadow.get("offset_1080", 8), ch)
     shadow_blur = cl.scale_1080(fg_shadow.get("blur_1080", 14), ch)
     shadow_opacity = float(fg_shadow.get("opacity", 0.58))
+    watermark = dict(preset.get("watermark", {}))
+    for source_key, target_key in (
+        ("font_size_1080", "font_size"),
+        ("bottom_safe_margin_1080", "bottom_safe_margin"),
+        ("padding_x_1080", "padding_x"),
+        ("padding_y_1080", "padding_y"),
+        ("radius_1080", "radius"),
+        ("border_width_1080", "border_width"),
+        ("outline_1080", "outline"),
+    ):
+        if source_key in watermark:
+            watermark[target_key] = cl.scale_1080(watermark.pop(source_key), ch)
     safe = preset["safe"]
     encode = dict(preset.get("encode", {}))
     requested_vcodec = str(encode.get("vcodec", "h264_nvenc"))
@@ -92,16 +106,33 @@ def render(video, out, top_spec, bot_spec, preset_name="tiktok_fortnite",
     active = dg.active_bounds(video, probe)
     top_lines = cl.parse_text_spec(top_spec, default_size=cl.scale_1080(preset["font_size_1080"], ch))
     bot_lines = cl.parse_text_spec(bot_spec, default_size=cl.scale_1080(preset["font_size_1080"], ch))
+    # Overlay copy is intentionally normalized independently from the ORIGINAL
+    # metadata: no tildes/diacritics and all visible words in uppercase.
+    cl.normalize_copy_lines(top_lines)
+    cl.normalize_copy_lines(bot_lines)
     auto_font = preset.get("auto_font", {})
     if auto_font.get("enabled", True):
         safe_text_width = cw - int(cw * safe["left_f"]) - int(cw * safe["right_f"])
         base_fs = cl.scale_1080(preset["font_size_1080"], ch)
-        max_fs = cl.scale_1080(auto_font.get("max_size_1080", 84), ch)
+        title_max_fs = cl.scale_1080(
+            auto_font.get("title_max_size_1080", auto_font.get("max_size_1080", 84)), ch
+        )
+        support_max_fs = cl.scale_1080(
+            auto_font.get("support_max_size_1080", auto_font.get("max_size_1080", 84)), ch
+        )
         fraction = float(auto_font.get("target_width_fraction", 0.82))
-        cl.enlarge_short_lines(top_lines, font, safe_text_width, base_fs, max_fs, fraction)
-        cl.enlarge_short_lines(bot_lines, font, safe_text_width, base_fs, max_fs, fraction)
-    layout = cl.Layout(cw, ch, active["w"], active["h"], top_lines, bot_lines,
-                       gap, spacing, font, wave, safe)
+        cl.enlarge_short_lines(top_lines, font, safe_text_width, base_fs,
+                               title_max_fs, fraction)
+        cl.enlarge_short_lines(bot_lines, font, safe_text_width, base_fs,
+                               support_max_fs, fraction)
+    min_fs = cl.scale_1080(auto_font.get("min_size_1080", 30), ch)
+    top_lines, bot_lines, layout = cl.fit_text_blocks(
+        top_lines, bot_lines, cw, ch, active["w"], active["h"], font,
+        gap, spacing, safe, min_size=min_fs,
+        # The text can move horizontally by ``wave`` and its outline extends
+        # by ``outline``; both are reserved before measuring the safe width.
+        text_padding=outline + abs(int(wave)),
+    )
 
     if debug:
         print("VIDEO ANALYSIS")
@@ -120,12 +151,16 @@ def render(video, out, top_spec, bot_spec, preset_name="tiktok_fortnite",
         print(f"bottom gap: {layout.gap_bot}")
         print("BACKGROUND")
         print(f"aspect preserved: true\ncover mode: true\ncrop centered: true\nblur: {blur}")
+        if watermark.get("enabled", True) and watermark.get("text"):
+            print(f"WATERMARK: {watermark['text']} (lower center text)")
     else:
         print(layout.debug(f"Source: {probe['width']}x{probe['height']} "
                            f"(active {active['w']}x{active['h']})"))
 
     anchors = (layout.top_block.lines[-1].color if layout.top_block.lines else None,
                layout.bot_block.lines[0].color if layout.bot_block.lines else None)
+    requested_top = bool(layout.top_block.lines)
+    requested_bottom = bool(layout.bot_block.lines)
     final_frame = None
     # El objetivo visual se fija antes de cualquier corrección. Las métricas
     # de drawtext pueden diferir del bbox de PIL; por ello no se convierte un
@@ -134,32 +169,49 @@ def render(video, out, top_spec, bot_spec, preset_name="tiktok_fortnite",
     for it in range(max_iter):
         cmd, tmpdir, cover = bf.build(video, probe, active, layout, out, blur=blur,
                                       cq=cq, outline=outline, wave=wave, wave_hz=wave_hz,
-                                      font=font, fg_radius=fg_radius,
+                                      outline_color=outline_color, font=font,
+                                      fg_radius=fg_radius,
                                       shadow_enabled=shadow_enabled,
                                       shadow_offset=shadow_offset,
                                       shadow_blur=shadow_blur,
                                       shadow_opacity=shadow_opacity,
+                                      watermark=watermark,
                                       encode=encode, use_cuda=use_cuda)
         if debug:
             print(f"Background scaled: {cover[0]}x{cover[1]} (cover, AR intacto)")
         rc, err = bf.run(cmd)
         shutil.rmtree(tmpdir, ignore_errors=True)
         if rc != 0:
+            if use_cuda and requested_vcodec.endswith("_nvenc"):
+                print("NVENC falló durante el render; reintentando con el encoder CPU")
+                use_cuda = False
+                continue
             raise RuntimeError("ffmpeg: " + err[-1500:])
         vr.validate_output(out, cw, ch)
         frame_png = out + ".chk.png"
         # En clips muy cortos 0.3s puede quedar fuera del stream.
         check_t = min(0.3, max(0.0, probe["duration"] / 2.0))
         vr.extract_frame(out, check_t, frame_png)
-        gtop, gbot = vr.measure_gaps(frame_png, layout, *anchors)
+        gtop, gbot = vr.measure_gaps(
+            frame_png, layout, anchor_top=anchors[0], anchor_bottom=anchors[1]
+        )
         print(f"[check {it}] real arriba={gtop} real abajo={gbot} "
               f"(objetivo {target_top_gap}/{target_bot_gap})")
-        top_ok = (gtop is None or (target_top_gap is not None and abs(gtop - target_top_gap) <= 2))
-        bot_ok = (gbot is None or (target_bot_gap is not None and abs(gbot - target_bot_gap) <= 2))
+        top_ok = (not requested_top or
+                  (gtop is not None and target_top_gap is not None
+                   and abs(gtop - target_top_gap) <= 2))
+        bot_ok = (not requested_bottom or
+                  (gbot is not None and target_bot_gap is not None
+                   and abs(gbot - target_bot_gap) <= 2))
         ok = top_ok and bot_ok
-        if not correct or ok:
+        if ok:
             final_frame = frame_png
             break
+        if not correct:
+            raise RuntimeError(
+                f"Los gaps reales no cumplen el objetivo: arriba={gtop}, abajo={gbot}; "
+                "usa la corrección automática o ajusta el preset"
+            )
         # Superior: si el gap real es demasiado grande, bajar el bloque (dy positivo).
         # Inferior: si el gap real es demasiado grande, subir el bloque (dy negativo).
         d_top = (gtop - target_top_gap) if (gtop is not None and target_top_gap is not None) else 0
@@ -169,8 +221,15 @@ def render(video, out, top_spec, bot_spec, preset_name="tiktok_fortnite",
             break
         layout.top_block.shift(d_top)
         layout.bot_block.shift(d_bot)
+        layout._validate_text_geometry()
         print(f"  correccion: d_top={d_top} d_bot={d_bot}")
         os.remove(frame_png)
+
+    if final_frame is None:
+        raise RuntimeError(
+            f"No se pudo validar la geometría después de {max_iter} intentos; "
+            "no se entrega el render"
+        )
 
     if final_frame and diag:
         diag_out = out + ".diag.png"

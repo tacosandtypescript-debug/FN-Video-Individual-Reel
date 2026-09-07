@@ -1,6 +1,7 @@
 # Dependencias Python de la skill
 Pillow
 numpy
+python-telegram-bot>=22.8,<23
 
 # Dependencias de sistema (no se instalan con pip)
 # - Python 3.11+

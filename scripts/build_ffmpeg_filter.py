@@ -2,7 +2,7 @@
 """build_ffmpeg_filter.py - Ensambla el filter_complex completo.
 
 decode CUDA -> hwdownload -> crop (si barras) -> split -> bg cover+gblur ->
-fg contain -> overlay -> drawtext (unico paso CPU obligatorio) -> NVENC/libx264.
+fg contain -> overlay -> drawtext + watermark text -> NVENC/libx264.
 """
 import shutil
 import subprocess
@@ -59,9 +59,10 @@ def _rounded_alpha_expr(w, h, r):
 
 
 def build(video_path, probe, active, layout, out_path, blur=16.0, cq=21,
-          outline=5, wave=2, wave_hz=1.1, font=None, audio=True,
+          outline=5, outline_color="black", wave=2, wave_hz=1.1, font=None, audio=True,
           fg_radius=18, shadow_enabled=True, shadow_offset=8,
-          shadow_blur=14, shadow_opacity=0.58, encode=None, use_cuda=None):
+          shadow_blur=14, shadow_opacity=0.58, watermark=None,
+          encode=None, use_cuda=None):
     encode = encode or {}
     requested_vcodec = encode.get("vcodec", "h264_nvenc")
     if use_cuda is None:
@@ -83,8 +84,11 @@ def build(video_path, probe, active, layout, out_path, blur=16.0, cq=21,
     bg = bb.bg_chain(cw, ch, blur)
     fg = f"[fg]scale={v.w}:{v.h},format=rgba[fgs];"
     mask_expr = _rounded_alpha_expr(v.w, v.h, max(2, fg_radius))
-    mask = (f"color=c=white:s={v.w}x{v.h}:r=60,format=gray,"
-            f"geq=lum='255':a='{mask_expr}'[mask];")
+    # alphamerge consumes the luminance plane of the mask.  Writing ``a=`` on
+    # a plain gray stream does not create an alpha plane, which used to make
+    # every corner opaque despite the rounded-corner expression.
+    mask = (f"color=c=black:s={v.w}x{v.h}:r=60,format=gray,"
+            f"geq=lum='{mask_expr}'[mask];")
     rounded = "[mask]split=2[maskfg][maskshadow];[fgs][maskfg]alphamerge[fgra];"
     if shadow_enabled:
         shadow = (f"[maskshadow]boxblur=luma_radius={shadow_blur}:luma_power=1,"
@@ -97,14 +101,34 @@ def build(video_path, probe, active, layout, out_path, blur=16.0, cq=21,
         shadow = ""
         ov = f"[bgb][fgra]overlay={v.x}:{v.y}:shortest=1[base];"
     fg = fg + mask + rounded + shadow
-    draws, tmpdir = btl.build_drawtexts(layout, font=font, outline=outline,
-                                        wave=wave, wave_hz=wave_hz)
-    if draws:
-        text_chain = "[base]" + ",".join(draws) + "[txt];[txt]"
+    draws, tmpdir = btl.build_drawtexts(
+        layout, font=font, outline=outline, outline_color=outline_color,
+        wave=wave, wave_hz=wave_hz,
+    )
+    watermark_draw = None
+    if watermark and watermark.get("enabled", True) and str(watermark.get("text", "")).strip():
+        watermark_y = int(layout.safe_limits["bottom"])
+        watermark_y -= int(watermark.get("font_size", 28))
+        watermark_y -= max(0, int(watermark.get("bottom_safe_margin", 16)))
+        watermark_draw = btl.build_watermark_drawtext(
+            watermark.get("text"), font or layout.font,
+            watermark.get("font_size", 28), tmpdir=tmpdir, y=max(0, watermark_y),
+            color=watermark.get("text_color", "FFFFFF"),
+            alpha=watermark.get("text_alpha", 0.82),
+            outline=watermark.get("outline", 2),
+            outline_color=watermark.get("outline_color", "black"),
+        )
+    text_filters = list(draws)
+    if watermark_draw:
+        text_filters.append(watermark_draw)
+    if text_filters:
+        text_chain = "[base]" + ",".join(text_filters) + "[txt];"
+        current = "[txt]"
     else:
-        text_chain = "[base]"
+        text_chain = ""
+        current = "[base]"
     pix_fmt = encode.get("pix_fmt", "yuv420p")
-    fc = pre + bg + fg + ov + text_chain + f"format={pix_fmt},setsar=1[out]"
+    fc = pre + bg + fg + ov + text_chain + f"{current}format={pix_fmt},setsar=1[out]"
 
     cmd = ["ffmpeg", "-y", "-v", "error"]
     if use_cuda:

@@ -8,7 +8,14 @@
   "auto_font": {
     "enabled": true,
     "max_size_1080": 84,
+    "title_max_size_1080": 84,
+    "support_max_size_1080": 68,
+    "min_size_1080": 30,
     "target_width_fraction": 0.82
+  },
+  "editorial_colors": {
+    "palette": ["B84DFF", "42E8FF", "FFDD00", "FF39D7"],
+    "max_highlights": 4
   },
   "font": "/home/isaac/.local/share/fonts/Barlow-ExtraBoldItalic.ttf",
   "wave": 2,
@@ -21,6 +28,16 @@
     "offset_1080": 4,
     "blur_1080": 22,
     "opacity": 0.32
+  },
+  "watermark": {
+    "enabled": true,
+    "text": "CODIGO: KHETZALGG",
+    "font_size_1080": 56,
+    "bottom_safe_margin_1080": 4,
+    "text_color": "FFFFFF",
+    "text_alpha": 0.82,
+    "outline_1080": 2,
+    "outline_color": "black"
   },
   "blur": 16.0,
   "cover": true,

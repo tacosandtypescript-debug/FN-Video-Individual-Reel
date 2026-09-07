@@ -3,6 +3,10 @@ __pycache__/
 .venv/
 .env
 *.env
+.vve_jobs/
+jobs/
+*.chk.png
+*.diag.png
 *.mp4
 *.mov
 *.jpg

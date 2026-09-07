@@ -59,6 +59,44 @@ class EncodingTest(unittest.TestCase):
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
+    def test_rounded_mask_uses_luminance_plane(self):
+        cmd, tmpdir, _ = bff.build(
+            "input.mp4",
+            {"width": 1920, "height": 1080},
+            {"x": 0, "y": 0, "w": 1920, "h": 1080},
+            self.make_layout(),
+            "output.mp4",
+            encode={"vcodec": "libx264", "pix_fmt": "yuv420p"},
+            use_cuda=False,
+        )
+        try:
+            graph = cmd[cmd.index("-filter_complex") + 1]
+            self.assertIn("color=c=black:s=1080x608", graph)
+            self.assertIn("geq=lum='if(", graph)
+            self.assertNotIn("geq=lum='255':a=", graph)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_text_watermark_is_centered_in_the_filter(self):
+        cmd, tmpdir, _ = bff.build(
+            "input.mp4",
+            {"width": 1920, "height": 1080},
+            {"x": 0, "y": 0, "w": 1920, "h": 1080},
+            self.make_layout(),
+            "output.mp4",
+            watermark={"enabled": True, "text": "Código: khetzalgg", "font_size": 28},
+            encode={"vcodec": "libx264", "pix_fmt": "yuv420p"},
+            use_cuda=False,
+        )
+        try:
+            graph = cmd[cmd.index("-filter_complex") + 1]
+            self.assertNotIn("-loop", cmd)
+            self.assertIn("watermark.txt", graph)
+            self.assertIn("x='(w-text_w)/2'", graph)
+            self.assertIn("fontcolor=0xFFFFFF@0.82", graph)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -24,7 +24,8 @@ def probe(path):
         raise FileNotFoundError(f"No existe el video: {path}")
     cmd = ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
            "stream=width,height,r_frame_rate,avg_frame_rate,sample_aspect_ratio,"
-           "display_aspect_ratio,rotation,codec_name,pix_fmt", "-show_entries",
+           "display_aspect_ratio,rotation,codec_name,pix_fmt:stream_tags=rotate:"
+           "stream_side_data=rotation", "-show_entries",
            "format=duration", "-of", "json", path]
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
@@ -35,7 +36,18 @@ def probe(path):
     except (json.JSONDecodeError, KeyError, IndexError, TypeError) as exc:
         raise RuntimeError("ffprobe no devolvió un stream de video válido") from exc
     w, h = int(s["width"]), int(s["height"])
-    rot = int(float(s.get("rotation") or 0)) % 360
+    rotation_value = s.get("rotation")
+    if rotation_value is None:
+        rotation_value = (s.get("tags") or {}).get("rotate")
+    if rotation_value is None:
+        for side_data in s.get("side_data_list") or []:
+            if side_data.get("rotation") is not None:
+                rotation_value = side_data["rotation"]
+                break
+    try:
+        rot = int(float(rotation_value or 0)) % 360
+    except (TypeError, ValueError):
+        rot = 0
     if rot in (90, 270):
         w, h = h, w
     fps = _frac(s.get("r_frame_rate") or s.get("avg_frame_rate")) or 30.0

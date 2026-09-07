@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """detect_geometry.py - Imagen activa real via cropdetect (quita barras/letterbox)."""
 import re, subprocess
+from collections import Counter
 
 _CROP_RE = re.compile(r"crop=(\d+):(\d+):(\d+):(\d+)")
 
@@ -17,8 +18,13 @@ def active_bounds(path, probe, seconds=3.0):
     full = {"x": 0, "y": 0, "w": probe["width"], "h": probe["height"]}
     if not crops:
         return full
-    cw_, ch_, cx_, cy_ = (int(x) for x in crops[-1])   # cropdetect emite W:H:X:Y
-    if cw_ <= 0 or ch_ <= 0 or cw_ > probe["width"] or ch_ > probe["height"]:
+    # cropdetect can react to dark gameplay frames.  The mode over the sample
+    # is considerably more stable than taking whichever crop happened to be
+    # printed last.
+    cw_, ch_, cx_, cy_ = (int(x) for x in Counter(crops).most_common(1)[0][0])
+    if (cw_ <= 0 or ch_ <= 0 or cw_ > probe["width"] or
+            ch_ > probe["height"] or cx_ < 0 or cy_ < 0 or
+            cx_ + cw_ > probe["width"] or cy_ + ch_ > probe["height"]):
         return full
     if cw_ == probe["width"] and ch_ == probe["height"]:
         return full

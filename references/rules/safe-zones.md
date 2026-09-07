@@ -9,6 +9,9 @@ caption, controles inferiores.
   - arriba:    0.0725 x canvasH
   - abajo:     0.174 x canvasH desde abajo
 - Regla principal: los textos estan PEGADOS al video (gap pequeno).
-  Las safe zones solo desplazan el bloque lo minimo cuando no cabe.
+  Las safe zones solo desplazan el bloque lo minimo cuando no cabe. Antes de
+  renderizar, cada línea se mide con la fuente y el borde reales; si no cabe se
+  envuelve, reduce y, como último recurso, se trunca con `…`. El borde también
+  cuenta: ningún pixel del texto puede cruzar los límites seguros.
 - El video central puede ocupar el ancho completo aunque eso entre en las
   columnas laterales de UI: la restriccion es para TEXTO e info critica.

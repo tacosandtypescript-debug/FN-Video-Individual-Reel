@@ -77,7 +77,7 @@ def _line_color_mask(a, line):
     return mask
 
 
-def measure_gaps(frame_png, layout, anchor_bot=None, anchor_top=None):
+def measure_gaps(frame_png, layout, anchor_top=None, anchor_bottom=None):
     """Mide gaps reales usando VENTANAS alrededor del modelo (los glifos estan
     donde el layout dice, ±pocos px) y umbral proporcional al ancho de la linea
     ancla. Devuelve (gap_top_real, gap_bot_real)."""
@@ -88,7 +88,7 @@ def measure_gaps(frame_png, layout, anchor_bot=None, anchor_top=None):
     gtop = gbot = None
 
     # --- gap superior: ancla = ultima linea del bloque superior ---
-    if anchor_bot and layout.top_block.lines:
+    if anchor_top and layout.top_block.lines:
         ln = layout.top_block.lines[-1]
         thr = max(12, int(ln.width_px * 0.06))
         half = max(ln.width_px // 2 + 40, 100)
@@ -102,7 +102,7 @@ def measure_gaps(frame_png, layout, anchor_bot=None, anchor_top=None):
             gtop = v.top - (int(rows.max()) + y0)
 
     # --- gap inferior: ancla = primera linea del bloque inferior ---
-    if anchor_top and layout.bot_block.lines:
+    if anchor_bottom and layout.bot_block.lines:
         ln = layout.bot_block.lines[0]
         thr = max(12, int(ln.width_px * 0.06))
         half = max(ln.width_px // 2 + 40, 100)

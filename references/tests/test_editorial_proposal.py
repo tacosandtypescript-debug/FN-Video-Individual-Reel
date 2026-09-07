@@ -4,6 +4,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "scripts"))
+import editorial_proposal as ep
 from editorial_proposal import EditorialProposal, EditorialProposalSet
 
 
@@ -16,7 +17,7 @@ class EditorialProposalTest(unittest.TestCase):
         p.approve()
         top, bottom = p.to_specs()
         self.assertEqual(top, "NUEVO EVENTO|00E5FF")
-        self.assertEqual(bottom, "LLEGA MAÑANA|FFFFFF")
+        self.assertEqual(bottom, "LLEGA MANANA|FFFFFF")
 
     def test_rejects_invalid_color(self):
         p = EditorialProposal("https://x.com/post", top=["HOLA|NOPE"],
@@ -51,10 +52,45 @@ class EditorialProposalTest(unittest.TestCase):
     def test_limits_accent_colors(self):
         p = EditorialProposal(
             "https://x.com/post",
-            top=["{UNO|B84DFF} {DOS|42E8FF} {TRES|FFDD00}|FFFFFF"],
-            bottom=["{CUATRO|FF39D7}|FFFFFF"],
+            top=["{ALFA|B84DFF} {BETA|42E8FF} {GAMMA|FFDD00}|FFFFFF"],
+            bottom=["{DELTA|FF39D7} {EPSILON|00FF00}|FFFFFF"],
         )
         with self.assertRaises(ValueError):
+            p.validate()
+
+    def test_semantic_colorizer_skips_stopwords_and_spreads_accents(self):
+        top, bottom, colors = ep.semantic_colorize_blocks(
+            ["LA NUEVA TEMPORADA LLEGA EN FORTNITE|FFFFFF"],
+            ["CON MÁS XP PARA LOS JUGADORES|FFFFFF"],
+        )
+        rendered = " ".join(top + bottom)
+        self.assertIn("{NUEVA|", rendered)
+        self.assertIn("{TEMPORADA|", rendered)
+        self.assertIn("{FORTNITE|", rendered)
+        self.assertIn("{XP|", rendered)
+        for stopword in ("LA", "EN", "CON", "MÁS", "PARA", "LOS"):
+            self.assertNotIn("{" + stopword + "|", rendered)
+        self.assertLessEqual(len(colors), ep.MAX_ACCENT_COLORS)
+        self.assertGreaterEqual(len(colors), 3)
+        self.assertNotIn("{MAS|", " ".join(top + bottom))
+
+    def test_overlay_copy_is_uppercase_without_diacritics(self):
+        top, bottom, _ = ep.semantic_colorize_blocks(
+            ["Código de creador|FFFFFF"],
+            ["Más acción mañana|FFFFFF"],
+        )
+        rendered = " ".join(ep._plain_line(line) for line in top + bottom)
+        self.assertIn("CODIGO DE CREADOR", rendered)
+        self.assertIn("MAS ACCION MANANA", rendered)
+        self.assertNotRegex(rendered, r"[áéíóúÁÉÍÓÚüÜ]")
+
+    def test_rejects_explicit_stopword_accent(self):
+        p = EditorialProposal(
+            "https://x.com/post",
+            top=["{DE|B84DFF} FORTNITE|FFFFFF"],
+            bottom=["NUEVA TEMPORADA|FFFFFF"],
+        )
+        with self.assertRaisesRegex(ValueError, "relleno"):
             p.validate()
 
     def test_rejects_generic_hook(self):

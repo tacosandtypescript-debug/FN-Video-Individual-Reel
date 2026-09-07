@@ -50,6 +50,22 @@ class AspectRatioTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             cl.parse_text_spec("LINEA|NOPE")
 
+    def test_vertical_source_with_only_top_text_keeps_gap(self):
+        top = cl.parse_text_spec("TEXTO ARRIBA|FFFFFF")
+        lay = cl.Layout(1080, 1920, 1080, 1920, top, [], gap=32, spacing=18,
+                        font_path=FONT)
+        self.assertEqual(lay.gap_top, 32)
+        self.assertGreater(lay.video.top, 0)
+        self.assertGreater(lay.video.top, lay.top_block.bottom)
+
+    def test_vertical_source_with_only_bottom_text_keeps_gap(self):
+        bot = cl.parse_text_spec("TEXTO ABAJO|FFFFFF")
+        lay = cl.Layout(1080, 1920, 1080, 1920, [], bot, gap=32, spacing=18,
+                        font_path=FONT)
+        self.assertEqual(lay.gap_bot, 32)
+        self.assertLess(lay.video.bottom, 1920)
+        self.assertGreater(lay.bot_block.top, lay.video.bottom)
+
 
 if __name__ == "__main__":
     unittest.main()

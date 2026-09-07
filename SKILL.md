@@ -33,14 +33,32 @@ y los videos nuevos heredan las reglas automaticamente. Entrada desde Telegram: 
    sombra exterior suave para separarlo del background. No dibujar línea, marco ni
    borde visible. El radio, desplazamiento, blur y opacidad viven en el preset;
    deben mantenerse sutiles y no alterar la geometría ni deformar el video.
-10. **Tamaño dinámico del texto**: cuando el texto sea corto, aumentar automáticamente
-    la fuente hasta ocupar aproximadamente el 82% del ancho seguro, con máximo de
-    84 px a 1080×1920. Los tamaños escritos explícitamente en `top.txt` o `bot.txt`
-    siempre se respetan.
-11. **Color por palabra**: cada segmento de acento debe marcar exactamente una palabra
-    con el formato `{PALABRA|RRGGBB}`. Una propuesta puede usar como máximo tres
-    colores de acento distintos; `FFFFFF` es el color base y no cuenta. No colorear
-    frases de varias palabras ni líneas completas por decoración.
+10. **Tamaño dinámico y safe zone dura**: cuando el texto sea corto, aumentar
+    automáticamente el bloque superior hasta aproximadamente el 82% del ancho
+    seguro, con máximo de 84 px a 1080×1920. El bloque inferior funciona como
+    apoyo y puede tener un máximo menor (68 px en el preset Fortnite). Si una
+    línea es larga, se mide con la fuente real, se parte por palabras y se reduce
+    gradualmente hasta el mínimo del preset. Si todavía no cabe, se trunca con
+    `…`; nunca se permite que el bbox ni el borde del texto crucen la safe zone.
+    Un `SIZE` explícito es una preferencia visual, no puede romper este límite.
+11. **Jerarquía de copy**: ARRIBA es el titular (hecho/acción principal) y ABAJO
+    es el dato que lo completa (resultado, contexto o condición). Con poco texto,
+    ARRIBA debe verse claramente más grande; con más texto, se reduce o se envuelve
+    de forma independiente. El vídeo se encoge solo dentro del espacio que queda,
+    conservando su aspect ratio y los gaps al texto.
+12. **Color semántico por palabra**: el texto base es `FFFFFF` y cada segmento de
+    acento debe marcar exactamente una palabra con `{PALABRA|RRGGBB}`. Usar hasta
+    cuatro acentos de la paleta `B84DFF`, `42E8FF`, `FFDD00`, `FF39D7` (normalmente
+    3–4 si hay suficientes palabras importantes); distribuirlos entre ARRIBA y
+    ABAJO cuando ambos tengan contenido. No colorear palabras funcionales o de
+    relleno como `de`, `del`, `la`, `el`, `en`, `y`, `o`, `que`, `es`, `un`, `una`,
+    `para`, `por`, `con`, `a`, `the`, `of`, `in`, `and`, `is`, `to` o `for`. No
+    colorear frases de varias palabras ni líneas completas por decoración. Si no
+    hay una palabra importante clara, dejarla blanca.
+13. **Copy del overlay**: todo texto que se dibuja sobre el vídeo —titular,
+    apoyo y firma— se normaliza a MAYÚSCULAS y sin tildes/diacríticos. Ejemplo:
+    `Código: khetzalgg` se renderiza como `CODIGO: KHETZALGG`; el campo
+    **ORIGINAL** mostrado en la revisión sí conserva el texto publicado.
 
 ## Pipeline (scripts en `scripts/`)
 
@@ -64,7 +82,7 @@ python3 scripts/render_video.py INPUT.mp4 -o SALIDA.mp4 \
     [--canvas 1080x1920] [--gap 32] [--blur 16] [--cq 21]
 ```
 
-`top.txt`/`bot.txt`: una linea por linea de texto: `TEXTO|HEXCOLOR|SIZEpx` (SIZE opcional; por defecto el del preset). Las 2 lineas de arriba forman UN bloque; las de abajo, otro.
+`top.txt`/`bot.txt`: una linea por linea de texto: `TEXTO|HEXCOLOR|SIZEpx` (SIZE opcional; por defecto el del preset). Se recomiendan 1–2 líneas lógicas por bloque; el renderer puede envolverlas en más líneas visuales para respetar la safe zone y recortar con `…` solo como último recurso. Las líneas de arriba forman UN bloque; las de abajo, otro.
 
 ### Debug
 
@@ -181,10 +199,13 @@ repiten la misma promesa.
      Solo ofrecer un bloque único si el post de verdad no necesita contexto extra.
    - **COLORES**: anotar solo palabras informativas con marcado por segmento:
      `REGRESA LA {TEMPORADA|B84DFF}|FFFFFF`. Lo que esté entre `{}` debe ser una
-     sola palabra y recibe un único color. Usar como máximo tres colores de acento
+     sola palabra y recibe un único color. Usar hasta cuatro colores de acento
      distintos por propuesta; `FFFFFF` es el color base y no cuenta. Elegir color
-     por significado: nombre/evento, novedad, fecha o dato clave. Nunca colorear
-     frases de varias palabras ni pintar toda la línea como decoración.
+     por significado: nombre/evento, novedad, fecha o dato clave. No marcar
+     artículos, preposiciones, conjunciones, auxiliares ni pronombres solo para
+     llenar la paleta. Nunca colorear frases de varias palabras ni pintar toda la
+     línea como decoración. El código valida este marcado y rechaza un acento
+     puesto sobre una stopword.
 2. Presentar las tres opciones como botones inline de Telegram mediante
    `clarify` (una sola pregunta, elecciones: **OPCIÓN 1**, **OPCIÓN 2**,
    **OPCIÓN 3**). El texto previo debe mostrar arriba/abajo y las palabras de
@@ -252,8 +273,9 @@ Renderizando… Validando… Enviando…).
 `source_url, resolved_url, platform, title, author, description, duration,
 thumbnail, width, height, fps, date, input_file, workdir, metadata` — se guarda
 como JSON junto a la salida. Si falta `--top/--bot`, el texto superior se genera
-automáticamente desde el título (2 líneas que caben en el canvas); si no hay
-título, pedir al usuario el texto antes de renderizar.
+automáticamente desde el título (normalmente 1–2 líneas); el renderer puede
+envolverlo o recortarlo con `…` para cumplir la safe zone. Si no hay título,
+pedir al usuario el texto antes de renderizar.
 
 ### Errores (siempre limpiar con try/finally)
 

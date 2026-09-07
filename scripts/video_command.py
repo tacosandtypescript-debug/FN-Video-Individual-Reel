@@ -11,27 +11,26 @@ Uso:
 
 Siempre limpia temporales y libera recursos aunque falle (try/finally).
 """
-import argparse, json, os, re, shutil, sys, tempfile, traceback
+import argparse, json, os, re, shutil, sys, tempfile, traceback, uuid
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 import video_resolver as vr
 from video_job import VideoJob
-from editorial_proposal import EditorialProposal, EditorialProposalSet, display as display_proposal
+from editorial_proposal import EditorialProposal, EditorialProposalSet
 import probe_video as pv
-import detect_geometry as dg
 import calculate_layout as cl
-import build_ffmpeg_filter as bf
-import validate_render as vr2
 
 FONT = "/home/isaac/.local/share/fonts/Barlow-ExtraBoldItalic.ttf"
 
 
-def auto_split_title(font, title, cw, fs, max_lines=2, max_width_frac=0.62):
-    """Divide el titulo en <=max_lines lineas que caben en el ancho del canvas."""
+def auto_split_title(font, title, cw, fs, max_lines=8, max_width_frac=0.88):
+    """Divide el título en líneas seguras; el renderer hace el ajuste final."""
     max_w = int(cw * max_width_frac)
-    words = re.sub(r"\s+", " ", (title or "").strip().replace("\n", " ")).split()
+    title = re.sub(r"https?://\S+|www\.\S+", " ", title or "", flags=re.IGNORECASE)
+    title = re.sub(r"[#{}|]", " ", title)
+    words = re.sub(r"\s+", " ", title.strip().replace("\n", " ")).split()
     if not words:
         return []
     lines, cur = [], ""
@@ -44,7 +43,18 @@ def auto_split_title(font, title, cw, fs, max_lines=2, max_width_frac=0.62):
             cur = trial
     if cur:
         lines.append(cur)
-    return lines[:max_lines]
+    if len(lines) <= max_lines:
+        return lines
+
+    # Do not silently drop the rest of a source title.  Make truncation
+    # explicit with an ellipsis while keeping the generated spec parseable.
+    lines = lines[:max_lines]
+    suffix = "…"
+    last = lines[-1]
+    while last and cl.line_width(font, f"{last} {suffix}", fs) > max_w:
+        last = " ".join(last.split()[:-1])
+    lines[-1] = f"{last} {suffix}".strip() if last else suffix
+    return lines
 
 
 def ensure_texts(top_spec, bot_spec, title, cw, fs, author="", font=FONT):
@@ -83,6 +93,7 @@ def cmd_prepare(url, job_path, workdir):
     print("Descargando video... OK")
     print("Analizando contenido...")
     print(job.summary())
+    os.makedirs(os.path.dirname(os.path.abspath(job_path)), exist_ok=True)
     job.save(job_path)
     print(f"JOB:{job_path}")
     return 0
@@ -96,6 +107,9 @@ def cmd_render_approved(job_path, proposal_path, out, preset, canvas, gap, blur,
     if "options" in proposal_data:
         proposal_set = EditorialProposalSet.load(proposal_path)
         proposal_set.validate()
+        if (os.path.realpath(proposal_set.job_path) !=
+                os.path.realpath(job_path)):
+            raise ValueError("El set editorial no corresponde a este VideoJob")
         if proposal_set.selected is None:
             raise PermissionError("El set editorial todavía no tiene una opción aprobada")
         proposal = proposal_set.options[proposal_set.selected]
@@ -127,7 +141,8 @@ def cmd_resolve(url, workdir):
     return 0
 
 
-def cmd_run(url, out, top_spec, bot_spec, preset, canvas, gap, blur, cq, diag, workdir):
+def cmd_run(url, out, top_spec, bot_spec, preset, canvas, gap, blur, cq, diag,
+            workdir, cleanup_source=False):
     try:
         print("Resolviendo enlace...")
         job = vr.resolve(url, workdir=workdir)
@@ -141,7 +156,9 @@ def cmd_run(url, out, top_spec, bot_spec, preset, canvas, gap, blur, cq, diag, w
               f"dur={probe['duration']:.1f}s")
         print("Preparando edicion...")
         cw = (canvas or (1080, 1920))[0]
-        fs = cl.scale_1080(60, (canvas or (1080, 1920))[1])
+        import render_video as rv
+        font_size_1080 = rv.Preset(preset).get("font_size_1080", 60)
+        fs = cl.scale_1080(font_size_1080, (canvas or (1080, 1920))[1])
         top, bot = ensure_texts(top_spec, bot_spec, job.title, cw, fs, job.author,
                                 font=preset_font(preset))
         print("Renderizando...")
@@ -149,6 +166,10 @@ def cmd_run(url, out, top_spec, bot_spec, preset, canvas, gap, blur, cq, diag, w
                                          canvas, gap, blur, cq, diag)
         print("Validando... OK (gaps reales verificados contra el objetivo)")
         print("Edición lista")
+        if cleanup_source:
+            job.metadata["_vve_source_removed_after_run"] = True
+            job.input_file = ""
+            job.workdir = ""
         meta_path = job.save(out + ".job.json")
         print(f"MEDIA:{out}")
         if frame:
@@ -191,19 +212,21 @@ def cmd_local(path, out, top_spec, bot_spec, preset, canvas, gap, blur, cq, diag
 def main():
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name in ("resolve", "run"):
-        p = sub.add_parser(name)
-        p.add_argument("url")
-        p.add_argument("-o", "--out")
-        p.add_argument("--top", default=None)
-        p.add_argument("--bot", default=None)
-        p.add_argument("--preset", default="tiktok_fortnite")
-        p.add_argument("--canvas", default=None)
-        p.add_argument("--gap", type=int, default=None)
-        p.add_argument("--blur", type=float, default=None)
-        p.add_argument("--cq", type=int, default=None)
-        p.add_argument("--diag", action="store_true")
-        p.add_argument("--workdir", default=None)
+    p = sub.add_parser("resolve", help="descarga y conserva el VideoJob")
+    p.add_argument("url")
+    p.add_argument("--workdir", default=None)
+    p = sub.add_parser("run")
+    p.add_argument("url")
+    p.add_argument("-o", "--out", required=True)
+    p.add_argument("--top", default=None)
+    p.add_argument("--bot", default=None)
+    p.add_argument("--preset", default="tiktok_fortnite")
+    p.add_argument("--canvas", default=None)
+    p.add_argument("--gap", type=int, default=None)
+    p.add_argument("--blur", type=float, default=None)
+    p.add_argument("--cq", type=int, default=None)
+    p.add_argument("--diag", action="store_true")
+    p.add_argument("--workdir", default=None)
     p = sub.add_parser("prepare", help="descarga y guarda un VideoJob; no renderiza")
     p.add_argument("url")
     p.add_argument("--job", required=True)
@@ -234,9 +257,12 @@ def main():
     canvas = tuple(int(x) for x in canvas_value.lower().split("x")) if canvas_value else None
     workdir = getattr(a, "workdir", None)
     tmp = None
-    if a.cmd in ("resolve", "run") and not workdir:
+    if a.cmd == "run" and not workdir:
         tmp = tempfile.mkdtemp(prefix="vve_job_")
         workdir = tmp
+    elif a.cmd == "resolve" and not workdir:
+        workdir = os.path.join(os.getcwd(), ".vve_jobs", uuid.uuid4().hex)
+        os.makedirs(workdir, exist_ok=True)
     try:
         if a.cmd == "prepare":
             rc = cmd_prepare(a.url, a.job, a.workdir)
@@ -247,7 +273,7 @@ def main():
             rc = cmd_resolve(a.url, workdir)
         elif a.cmd == "run":
             rc = cmd_run(a.url, a.out, a.top, a.bot, a.preset, canvas, a.gap,
-                         a.blur, a.cq, a.diag, workdir)
+                         a.blur, a.cq, a.diag, workdir, cleanup_source=bool(tmp))
         else:
             rc = cmd_local(a.path, a.out, a.top, a.bot, a.preset, canvas, a.gap,
                            a.blur, a.cq, a.diag)

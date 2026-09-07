@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """video_job.py - Objeto de trabajo del flujo /video <URL>."""
-import json, os
+import json, os, tempfile
 from dataclasses import dataclass, field, asdict
 
 
 @dataclass
 class VideoJob:
+    job_id: str = ""
     source_url: str = ""
     resolved_url: str = ""
     platform: str = ""
@@ -24,8 +25,20 @@ class VideoJob:
 
     def save(self, path=None):
         path = path or os.path.join(self.workdir or ".", "video_job.json")
-        with open(path, "w", encoding="utf-8") as fh:
-            json.dump(asdict(self), fh, ensure_ascii=False, indent=2)
+        parent = os.path.dirname(os.path.abspath(path)) or "."
+        os.makedirs(parent, exist_ok=True)
+        fd, temporary = tempfile.mkstemp(prefix=".video_job.", suffix=".json", dir=parent)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                json.dump(asdict(self), fh, ensure_ascii=False, indent=2)
+                fh.write("\n")
+            os.replace(temporary, path)
+        except Exception:
+            try:
+                os.unlink(temporary)
+            except OSError:
+                pass
+            raise
         return path
 
     @classmethod
