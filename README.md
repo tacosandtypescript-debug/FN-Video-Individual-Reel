@@ -55,7 +55,8 @@ python3 -m unittest discover -p 'test_*.py' -v
 ## Documentación completa
 
 Consulta `SKILL.md` y `references/rules/` para el flujo editorial, geometría,
-zona segura, fondo, tipografía, render y validación.
+zona segura, fondo, tipografía, render y validación. Las órdenes completas de
+instalación y operación están en `docs/COMMANDS.md`.
 
 ## Licencia y origen
 
