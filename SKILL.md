@@ -104,6 +104,14 @@ El archivo maestro no se modifica.
 
 Tras renderizar, `validate_render.py` mide sobre el frame real: si `gap_real_arriba` o `gap_real_abajo` difieren >2px del modelo, corrige el layout y re-renderiza (max 3 intentos). El render se considera OK con gaps reales == modelo (±2px) y zona segura respetada.
 
+**Verificación de render completo (obligatoria antes de enviar)**: un render cortado
+por timeout, reinicio del gateway o cierre de la sesión deja un MP4 truncado o sin
+`moov atom`, aunque pese decenas de MB. Antes de enviar cualquier video, comparar su
+duración con la del original (±0.1 s) y comprobar que `ffprobe` lee el contenedor.
+Si la duración es menor o el probe falla, borrar el archivo y repetir el render; los
+renders largos (>30 s de video) deben lanzarse en segundo plano y no darse por
+buenos solo por el peso del archivo.
+
 ## Procesamiento de varios videos a la vez
 
 Cada video recibido debe crear un trabajo independiente, identificado por su
