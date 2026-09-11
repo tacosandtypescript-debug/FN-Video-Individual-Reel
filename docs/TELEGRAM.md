@@ -2,7 +2,7 @@
 
 ## Qué queda resuelto
 
-`telegram_bot.py` es un adaptador asíncrono basado en
+`scripts/telegram_bot.py` es un adaptador asíncrono basado en
 `python-telegram-bot>=22.8,<23`. El flujo es:
 
 ```text
@@ -29,7 +29,7 @@ python3 -m pip install -r requirements.txt
 
 export TELEGRAM_BOT_TOKEN='TOKEN_DE_BOTFATHER'
 export VVE_JOBS_DIR='/var/lib/fortnite-vve/jobs'
-python3 telegram_bot.py --max-renders 1 --max-jobs 3
+python3 scripts/telegram_bot.py --max-renders 1 --max-jobs 3
 ```
 
 `--max-renders 1` es el valor recomendado si se comparte una GPU. Las
@@ -53,6 +53,8 @@ Comandos disponibles:
 ## Montaje dentro de un bot existente
 
 ```python
+import sys
+sys.path.insert(0, "scripts")          # los módulos viven en scripts/
 from telegram_bot import build_application
 
 application = build_application(

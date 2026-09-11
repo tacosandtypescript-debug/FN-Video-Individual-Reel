@@ -5,7 +5,7 @@ import shutil
 import sys
 import unittest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "scripts"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 import build_ffmpeg_filter as bff
 import calculate_layout as cl
 

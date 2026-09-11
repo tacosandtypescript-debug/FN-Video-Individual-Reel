@@ -1,16 +1,44 @@
+# --- Python ---
 __pycache__/
 *.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Entornos virtuales ---
 .venv/
+venv/
+env/
+
+# --- Secretos (nunca versionar) ---
 .env
 *.env
-.vve_jobs/
+*.pem
+*.key
+
+# --- Trabajos y renders generados ---
 jobs/
-*.chk.png
-*.diag.png
+.vve_jobs/
 *.mp4
 *.mov
+*.mkv
+*.webm
+*.chk.png
+*.diag.png
+
+# --- Imágenes y miniaturas generadas ---
 *.jpg
 *.jpeg
 *.png
 *.webp
+!references/**/*.png
+
+# --- Logs y temporales ---
 *.log
+*.tmp
+*~
+
+# --- Sistema operativo ---
+.DS_Store
+Thumbs.db

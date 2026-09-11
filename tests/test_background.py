@@ -2,7 +2,7 @@
 """test_background.py - El fondo usa cover; prohibido stretch/downscale-extremo."""
 import os, sys, unittest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "scripts"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 import build_background as bb
 
 

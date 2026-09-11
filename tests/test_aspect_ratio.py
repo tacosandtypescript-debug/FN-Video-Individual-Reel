@@ -2,7 +2,7 @@
 """test_aspect_ratio.py - El layout funciona para multiples AR sin hardcode."""
 import os, sys, unittest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "scripts"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 import calculate_layout as cl
 
 FONT = "/home/isaac/.local/share/fonts/Barlow-ExtraBoldItalic.ttf"

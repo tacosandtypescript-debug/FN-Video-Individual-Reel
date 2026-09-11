@@ -2,6 +2,27 @@
 
 Skill de edición vertical 9:16 para videos de Fortnite y noticias de X/Twitter.
 
+## Estructura del proyecto
+
+```text
+SKILL.md                  Contrato completo: reglas, flujo editorial y pipeline
+README.md                 Esta guía: instalación, uso y estructura
+CHANGELOG.md              Historial de cambios
+LICENSE                   MIT
+requirements.txt          Dependencias Python (y de sistema, comentadas)
+docs/
+  COMMANDS.md             Órdenes completas de instalación y operación
+  TELEGRAM.md             Guía de montaje del bot de Telegram
+scripts/                  Motor de edición (resolver, geometría, render, bot)
+references/
+  presets/                Parámetros visuales (`tiktok_fortnite.json`)
+  rules/                  Reglas de fondo, layout, render, safe zones, tipografía
+tests/                    Batería de pruebas automatizadas
+```
+
+El motor se ejecuta con `scripts/` en el `PYTHONPATH`; los scripts se importan
+entre sí por nombre de módulo (por ejemplo `import calculate_layout`).
+
 ## Incluye
 
 - Resolución de videos con `yt-dlp`.
@@ -53,13 +74,13 @@ python3 scripts/prepare_telegram.py SALIDA.mp4 -o SALIDA_tg.mp4
 ## Tests
 
 ```bash
-cd references/tests
+cd tests
 python3 -m unittest discover -p 'test_*.py' -v
 ```
 
 ## Bot de Telegram
 
-La integración lista para montar está en `telegram_bot.py`. Usa
+La integración lista para montar está en `scripts/telegram_bot.py`. Usa
 `python-telegram-bot` 22.x, crea una carpeta aislada por `job_id`, muestra tres
 propuestas con botones inline y solo renderiza la opción aprobada. También
 acepta `/video <URL>` y `/video` seguido de un MP4 adjunto.
@@ -69,7 +90,7 @@ python3 -m venv .venv
 . .venv/bin/activate
 python3 -m pip install -r requirements.txt
 export TELEGRAM_BOT_TOKEN='123456:token-de-BotFather'
-python3 telegram_bot.py --jobs-dir /var/lib/fortnite-vve/jobs --max-renders 1
+python3 scripts/telegram_bot.py --jobs-dir /var/lib/fortnite-vve/jobs --max-renders 1
 ```
 
 La guía de integración con un bot existente está en
@@ -83,7 +104,15 @@ Consulta `SKILL.md` y `references/rules/` para el flujo editorial, geometría,
 zona segura, fondo, tipografía, render y validación. Las órdenes completas de
 instalación y operación están en `docs/COMMANDS.md`.
 
+| Documento | Contenido |
+| --- | --- |
+| `SKILL.md` | Reglas obligatorias, flujo editorial y pipeline completo |
+| `docs/COMMANDS.md` | Órdenes de instalación, render, validación y trabajos simultáneos |
+| `docs/TELEGRAM.md` | Montaje del bot, comandos y webhook |
+| `references/rules/` | Detalle de fondo, layout, render, safe zones y tipografía |
+| `CHANGELOG.md` | Historial de cambios del proyecto |
+
 ## Licencia y origen
 
-Skill de uso personal para el flujo de contenido de Isaac. Los scripts y
-configuraciones pertenecen a este repositorio privado.
+Proyecto privado de uso personal para el flujo de contenido de Isaac. Licencia
+MIT, véase `LICENSE`.

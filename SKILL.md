@@ -300,7 +300,7 @@ de navegador solo si realmente hace falta).
 ## Tests
 
 ```bash
-cd <skill_dir>/references/tests && python3 -m unittest discover -s . -p 'test_*.py' -v
+cd <skill_dir>/tests && python3 -m unittest discover -s . -p 'test_*.py' -v
 ```
 
 ## Relacion con otras skills

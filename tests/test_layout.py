@@ -2,7 +2,7 @@
 """test_layout.py - Bounding box de bloques y anclaje al video."""
 import os, sys, unittest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "scripts"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 import calculate_layout as cl
 
 FONT = "/home/isaac/.local/share/fonts/Barlow-ExtraBoldItalic.ttf"

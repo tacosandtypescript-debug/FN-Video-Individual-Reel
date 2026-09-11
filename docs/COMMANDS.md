@@ -105,7 +105,7 @@ python3 scripts/detect_geometry.py INPUT.mp4
 
 ```bash
 python3 -m unittest discover \
-  -s references/tests \
+  -s tests \
   -p 'test_*.py' \
   -v
 ```
@@ -130,6 +130,9 @@ limitarse a un máximo de tres según CPU, memoria y GPU. No compartas
 - `README.md`: instalación y uso rápido.
 - `references/presets/tiktok_fortnite.json`: estilo y parámetros.
 - `references/rules/`: reglas de fondo, layout, render, safe zones y tipografía.
-- `scripts/`: resolver, análisis, propuesta, geometría, render y validación.
-- `references/tests/`: batería automática.
+- `scripts/`: resolver, análisis, propuesta, geometría, render, validación y bot.
+- `scripts/telegram_bot.py`: adaptador de Telegram (propuestas y entrega).
+- `tests/`: batería automática.
+- `docs/`: órdenes completas y guía de Telegram.
+- `CHANGELOG.md` / `LICENSE`: historial de cambios y licencia MIT.
 - `requirements.txt`: dependencias Python y de sistema documentadas.
