@@ -8,6 +8,7 @@ Todas las órdenes se ejecutan desde la carpeta raíz de esta skill.
 python3 -m venv .venv
 . .venv/bin/activate
 python3 -m pip install -r requirements.txt
+python3 scripts/check_installation.py
 ```
 
 Dependencias del sistema:
@@ -15,10 +16,11 @@ Dependencias del sistema:
 ```bash
 ffmpeg -version
 ffprobe -version
-yt-dlp --version
 ```
 
 `h264_nvenc` es opcional. Si no está disponible, el render usa `libx264`.
+`check_installation.py` comprueba también que el ejecutable `yt-dlp` creado por
+la instalación Python esté disponible en el `PATH`.
 
 ## 2. Preparar un enlace de X, TikTok, YouTube o Instagram
 
@@ -85,14 +87,19 @@ python3 scripts/prepare_telegram.py \
 
 La orden conserva el maestro si cumple las condiciones. Si hace falta, genera
 una copia 720x1280, SAR 1:1, DAR 9:16, con audio compatible y tamaño reducido.
+El pipeline del bot crea además una miniatura JPEG de máximo 320 px y menos de
+200 kB, compatible con `send_video`.
 
 ## 7. Validar un render
 
 ```bash
 python3 scripts/validate_render.py \
   video_final.mp4 \
-  --preset references/presets/tiktok_fortnite.json
+  --canvas 1080x1920
 ```
+
+Para exigir que la salida conserve una duración conocida, añade
+`--expected-duration SEGUNDOS`.
 
 También se puede inspeccionar la fuente antes del render:
 
@@ -131,6 +138,7 @@ limitarse a un máximo de tres según CPU, memoria y GPU. No compartas
 - `references/presets/tiktok_fortnite.json`: estilo y parámetros.
 - `references/rules/`: reglas de fondo, layout, render, safe zones y tipografía.
 - `scripts/`: resolver, análisis, propuesta, geometría, render, validación y bot.
+- `scripts/check_installation.py`: diagnóstico de dependencias, comandos, fuente y preset.
 - `scripts/telegram_bot.py`: adaptador de Telegram (propuestas y entrega).
 - `tests/`: batería automática.
 - `docs/`: órdenes completas y guía de Telegram.

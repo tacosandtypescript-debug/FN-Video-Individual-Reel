@@ -8,9 +8,10 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 import build_ffmpeg_filter as bff
 import calculate_layout as cl
+import render_video
 
 
-FONT = "/home/isaac/.local/share/fonts/Barlow-ExtraBoldItalic.ttf"
+FONT = render_video.resolve_font("Barlow:style=ExtraBold Italic")
 
 
 class EncodingTest(unittest.TestCase):

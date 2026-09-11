@@ -1,10 +1,10 @@
-# Dependencias Python de la skill
-Pillow
-numpy
+# Dependencias Python de la skill. Probado con Python 3.11.
+Pillow>=10,<13
+numpy>=1.24,<3
 python-telegram-bot>=22.8,<23
+yt-dlp>=2026.8.19,<2027
 
 # Dependencias de sistema (no se instalan con pip)
 # - Python 3.11+
 # - ffmpeg y ffprobe
-# - yt-dlp
 # - NVIDIA NVENC opcional para acelerar el render

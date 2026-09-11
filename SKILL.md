@@ -28,7 +28,7 @@ y los videos nuevos heredan las reglas automaticamente. Entrada desde Telegram: 
 5. **Background blur tipo cover, prohibido el stretch**: `scale=WxH:force_original_aspect_ratio=increase` -> `crop=WxH:(iw-W)/2:(ih-H)/2` -> `gblur`. Prohibido `scale=1080:1920` puro (deforma) y prohibido downscale extremo + upscale (destruye calidad). Blur moderado a resolucion final.
 6. **FFprobe antes de editar**: width, height, DAR, SAR, rotation, duration, fps, pixel format; `cropdetect` si hay barras negras/letterbox (contenido util).
 7. **Safe zones**: reservar areas seguras TikTok/Reels (botones laterales, @usuario, caption, controles). Las safe zones NO rompen la regla de textos pegados al video: si falta espacio, se desplaza el bloque entero lo minimo.
-8. **Preset visual**: constantes configurables viven en `presets/tiktok_fortnite.json` (canvas, gap, blur, fuentes, spacing, safe zones, outline, animación, encode y acabado del primer plano). Prohibido usar números mágicos en los scripts.
+8. **Preset visual**: constantes configurables viven en `references/presets/tiktok_fortnite.json` (canvas, gap, blur, fuentes, spacing, safe zones, outline, animación, encode y acabado del primer plano). Prohibido usar números mágicos en los scripts.
 9. **Video en primer plano**: aplicar esquinas ligeramente redondeadas y una
    sombra exterior suave para separarlo del background. No dibujar línea, marco ni
    borde visible. El radio, desplazamiento, blur y opacidad viven en el preset;
@@ -73,6 +73,10 @@ probe_video.py        FFprobe: width/height/DAR/SAR/rotation/fps/duration/pix_fm
   -> prepare_telegram.py  comprueba tamaño/DAR/SAR/audio y crea copia Telegram si hace falta
 ```
 
+Antes de operar, comprobar el entorno con `python3 scripts/check_installation.py`.
+El archivo `requirements.txt` cubre las dependencias Python, incluido `yt-dlp`;
+FFmpeg y FFprobe siguen siendo dependencias del sistema.
+
 ## Uso
 
 ```bash
@@ -97,8 +101,10 @@ python3 scripts/prepare_telegram.py RENDER.mp4 -o RENDER_tg.mp4
 
 Si el archivo pesa como máximo 45 MB, lo conserva. Si supera ese tamaño, genera
 una copia 720×1280 con `setsar=1`, DAR 9:16, audio AAC y NVENC (o libx264 si no
-hay GPU). Después verifica
-codec streams, dimensiones, SAR, proporción, duración y tamaño antes de entregar.
+hay GPU). Después verifica codec streams, dimensiones, SAR, proporción, duración
+y tamaño antes de entregar. Cuando Telegram necesita una miniatura, el bot
+genera un JPEG separado de máximo 320 px y menos de 200 kB; el frame de diagnóstico PNG
+no se usa como thumbnail directamente.
 El archivo maestro no se modifica.
 
 
@@ -140,7 +146,10 @@ videos. Telegram debe enviar cada MP4 solo cuando el resultado de ese mismo
 
 `/video <URL>` **NO autoriza renderizar directamente**. Tras resolver y descargar,
 el agente debe analizar UNA sola publicación (título, descripción, autor, fecha y
-el video descargado si aporta contexto) y preparar una propuesta editorial.
+el video descargado si aporta contexto) y preparar una propuesta editorial. El
+`MetadataProposalProvider` incluido es un fallback conservador basado solo en
+metadata; para afirmar mecánicas o resultados observados en el video hay que
+inyectar un `ProposalProvider` que analice frames, audio o transcripción.
 
 ### Método para proponer títulos
 
@@ -250,8 +259,8 @@ hecho una llamada a Telegram.
 Cada MP4 debe enviarse mediante el método nativo de Telegram `sendVideo`, con
 el título y hashtags en el campo `caption` del mismo mensaje (no como un texto
 posterior separado). Adjuntar una miniatura vertical explícita cuando sea
-posible; comprobar que el archivo mantenga 1080×1920, SAR 1:1 y DAR 9:16 antes
-de enviarlo.
+posible; debe ser JPEG, menor de 200 kB y de máximo 320 px por lado. Comprobar
+que el archivo mantenga 1080×1920, SAR 1:1 y DAR 9:16 antes de enviarlo.
 
 El comando principal es **`/video <URL>`** y significa:
 _"Obtén este video, reúne su información, cierra las herramientas de descarga y

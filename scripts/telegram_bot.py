@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = ROOT / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
@@ -54,6 +54,7 @@ CALLBACK_RE = r"^vve:[0-9a-f]{32}:[0-2]$"
 DEFAULT_MAX_INPUT_MB = 500
 DEFAULT_TELEGRAM_DOWNLOAD_MB = 20
 DEFAULT_TELEGRAM_MAX_MB = 45
+DEFAULT_CAPTION_HASHTAGS = ("#Fortnite",)
 GENERIC_PREFIXES = (
     "mira ", "increíble ", "increible ", "brutal ", "no te lo pierdas ",
     "el mejor ", "secreto ", "viral ", "omg ",
@@ -200,7 +201,7 @@ class MetadataProposalProvider:
                 original_title=job.title,
                 original_description=job.description,
                 author=job.author,
-                analysis="Resultado: se conserva el título y se añade la descripción disponible.",
+                analysis="Resultado: usa únicamente la descripción disponible y confirmada por la fuente.",
                 top=title,
                 bottom=bottom_1,
                 color_notes="Se aplicarán acentos automáticos solo a palabras informativas.",
@@ -210,7 +211,7 @@ class MetadataProposalProvider:
                 original_title=job.title,
                 original_description=job.description,
                 author=job.author,
-                analysis="Mecánica: opción conservadora basada en el autor confirmado por la fuente.",
+                analysis="Fuente: usa el autor confirmado y no infiere una mecánica no verificada.",
                 top=title,
                 bottom=bottom_2,
                 color_notes="Se aplicarán acentos automáticos solo a palabras informativas.",
@@ -318,7 +319,9 @@ class TelegramPipeline:
         self.telegram_max_mb = telegram_max_mb
 
     def prepare_url(self, record: BotJob, url: str) -> VideoJob:
-        job = video_resolver.resolve(url, workdir=record.workdir)
+        job = video_resolver.resolve(
+            url, workdir=record.workdir, max_bytes=self.max_input_bytes
+        )
         if job.metadata.get("browser_required"):
             raise BrowserRequired(job.metadata.get("reason", "browser_fallback"))
         self._check_input(record, job.input_file)
@@ -390,7 +393,12 @@ class TelegramPipeline:
             record.telegram_path,
             max_mb=self.telegram_max_mb,
         )
-        return report, frame
+        thumbnail = None
+        if frame:
+            thumbnail = prepare_telegram.prepare_thumbnail(
+                frame, str(Path(record.workdir) / "thumbnail.jpg")
+            )
+        return report, thumbnail
 
 
 def _format_proposals(job: VideoJob, proposal_set: EditorialProposalSet) -> str:
@@ -421,7 +429,12 @@ def _format_proposals(job: VideoJob, proposal_set: EditorialProposalSet) -> str:
 
 def _caption(proposal: EditorialProposal) -> str:
     text = " ".join(_visible_line(line) for line in proposal.top + proposal.bottom)
-    return text[:1024]
+    hashtags = " ".join(DEFAULT_CAPTION_HASHTAGS)
+    if not hashtags:
+        return text[:1024]
+    available = max(0, 1024 - len(hashtags) - 1)
+    prefix = text[:available].rstrip()
+    return "\n".join(part for part in (prefix, hashtags) if part)
 
 
 class TelegramVideoBot:
@@ -714,7 +727,8 @@ class TelegramVideoBot:
     async def _send_video(self, bot: Any, record: BotJob,
                           proposal: EditorialProposal, frame: str | None) -> None:
         video_path = Path(record.telegram_path)
-        thumb_path = Path(frame) if frame else Path(record.master_path + ".chk.png")
+        thumb_path = (Path(frame) if frame
+                      else Path(record.workdir) / "thumbnail.jpg")
         with video_path.open("rb") as video:
             if thumb_path.is_file():
                 with thumb_path.open("rb") as thumbnail:

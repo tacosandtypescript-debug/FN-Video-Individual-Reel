@@ -6,6 +6,7 @@ solamente como fallback (lo ejecuta el agente con browser_*, nunca dentro de
 este modulo). Devuelve un VideoJob relleno o marca browser_required.
 """
 import os, re, shutil, subprocess, tempfile
+from ipaddress import ip_address
 from urllib.parse import urlparse
 
 from video_job import VideoJob
@@ -15,6 +16,12 @@ YTDLP = shutil.which("yt-dlp") or os.path.expanduser("~/.local/bin/yt-dlp")
 DIRECT_EXT = re.compile(r"\.(mp4|mov|webm|m4v|mkv)$", re.I)
 YTDLP_PROBE_TIMEOUT = 120
 YTDLP_DOWNLOAD_TIMEOUT = 1800
+UNSAFE_HOSTNAMES = {
+    "localhost",
+    "localhost.localdomain",
+    "ip6-localhost",
+    "ip6-loopback",
+}
 
 
 class ResolverError(Exception):
@@ -23,11 +30,45 @@ class ResolverError(Exception):
         self.kind = kind
 
 
+def _safe_host(host):
+    host = (host or "").rstrip(".").casefold()
+    if not host or host in UNSAFE_HOSTNAMES:
+        return False
+    if (host.endswith(".localhost") or host.endswith(".local") or
+            host.endswith(".internal") or host.endswith(".lan")):
+        return False
+    try:
+        return ip_address(host).is_global
+    except ValueError:
+        # DNS names are allowed here. A deployment exposing this bot publicly
+        # should additionally enforce egress/DNS policy at the network layer.
+        return True
+
+
+def validate_url(url):
+    """Validate an HTTP(S) URL before handing it to yt-dlp."""
+    try:
+        parsed = urlparse(url)
+        host = parsed.hostname
+    except (TypeError, ValueError) as exc:
+        raise ResolverError("invalid_url", "URL invalida") from exc
+    if parsed.scheme.lower() not in {"http", "https"} or not host:
+        raise ResolverError("invalid_url", "URL invalida")
+    if not _safe_host(host):
+        raise ResolverError("unsafe_url", "El host de la URL no está permitido")
+    return parsed
+
+
 def detect_platform(url):
-    parsed = urlparse(url)
-    if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
+    try:
+        parsed = urlparse(url)
+        host = parsed.hostname
+    except (TypeError, ValueError):
         return "invalid"
-    host = parsed.hostname.lower().removeprefix("www.")
+    if (parsed.scheme.lower() not in {"http", "https"} or not host or
+            not _safe_host(host)):
+        return "invalid"
+    host = host.lower().removeprefix("www.")
     if DIRECT_EXT.search(parsed.path):
         return "direct"
     if host == "tiktok.com" or host.endswith(".tiktok.com"):
@@ -83,14 +124,32 @@ def probe_remote(url):
     return None, True, "browser_fallback"
 
 
-def download(url, dest_dir=None, max_height=1080):
+def _format_max_filesize(max_bytes):
+    if max_bytes is None:
+        return None
+    try:
+        max_bytes = int(max_bytes)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("El límite de descarga debe ser numérico") from exc
+    if max_bytes <= 0:
+        raise ValueError("El límite de descarga debe ser positivo")
+    megabytes = f"{max_bytes / 1024 / 1024:.6f}".rstrip("0").rstrip(".")
+    return f"{megabytes}M"
+
+
+def download(url, dest_dir=None, max_height=1080, max_bytes=None):
     """Descarga el mejor video <= max_height con audio. Devuelve (ruta, meta)."""
+    validate_url(url)
     dest_dir = dest_dir or tempfile.mkdtemp(prefix="vve_job_")
     os.makedirs(dest_dir, exist_ok=True)
     out_tpl = os.path.join(dest_dir, "original.%(ext)s")
     fmt = f"bv*[height<={max_height}]+ba/b[height<={max_height}]"
-    r = _ytdlp(["--no-playlist", "-f", fmt, "--merge-output-format", "mp4",
-                "-o", out_tpl, url])
+    args = ["--no-playlist", "-f", fmt]
+    max_filesize = _format_max_filesize(max_bytes)
+    if max_filesize:
+        args += ["--max-filesize", max_filesize]
+    args += ["--merge-output-format", "mp4", "-o", out_tpl, url]
+    r = _ytdlp(args)
     if r.returncode != 0:
         raise ResolverError("download_failed", "yt-dlp: " + r.stderr[-500:])
     for name in os.listdir(dest_dir):
@@ -99,8 +158,9 @@ def download(url, dest_dir=None, max_height=1080):
     raise ResolverError("empty_file", "Descarga sin archivo util")
 
 
-def resolve(url, workdir=None):
+def resolve(url, workdir=None, max_bytes=None):
     """One-shot resolver: devuelve VideoJob (o lanza ResolverError). No usa navegador."""
+    validate_url(url)
     plat = detect_platform(url)
     if plat == "invalid":
         raise ResolverError("invalid_url", "URL invalida")
@@ -125,7 +185,7 @@ def resolve(url, workdir=None):
                    metadata=meta)
     job.workdir = workdir or tempfile.mkdtemp(prefix="vve_job_")
     os.makedirs(job.workdir, exist_ok=True)
-    path, _ = download(url, dest_dir=job.workdir)
+    path, _ = download(url, dest_dir=job.workdir, max_bytes=max_bytes)
     job.input_file = path
     # Resolución/fps reales del archivo y validación temprana de integridad.
     try:

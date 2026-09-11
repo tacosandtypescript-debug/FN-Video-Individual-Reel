@@ -12,6 +12,7 @@
   -> ORIGINAL + 3 propuestas
   -> botón inline del propietario
   -> render FFmpeg + validación
+  -> miniatura JPEG <=320 px / <200 kB
   -> copia Telegram <= 45 MB
   -> send_video(caption + thumbnail)
 ```
@@ -19,6 +20,10 @@
 La aplicación no ejecuta el navegador como fallback. Si `yt-dlp` devuelve
 login/private, el bot informa que ese enlace requiere una sesión o un fallback
 externo. Esto evita que un proceso de navegador quede vivo durante FFmpeg.
+
+La miniatura se genera separada del frame de diagnóstico: Telegram requiere
+JPEG, menos de 200 kB y dimensiones máximas de 320 px. El frame original no se
+envía directamente como thumbnail.
 
 ## Ejecución independiente
 
@@ -74,8 +79,9 @@ aplicación y usa el método de arranque de webhook de
 ## Propuestas editoriales
 
 El `MetadataProposalProvider` incluido no inventa mecánicas: solo usa título,
-descripción, autor, plataforma y fecha devueltos por el resolvedor. Para usar
-un agente editorial del bot, inyecta un objeto con un método `build(job)` que
+descripción, autor, plataforma y fecha devueltos por el resolvedor. Por tanto,
+es un fallback conservador y no sustituye un analizador de frames o audio.
+Para usar un agente editorial del bot, inyecta un objeto con un método `build(job)` que
 devuelva un `EditorialProposalSet` con exactamente tres opciones:
 
 ```python

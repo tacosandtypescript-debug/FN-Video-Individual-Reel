@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """validate_render.py - Verifica el render sobre pixeles reales y genera frame
 de diagnostico (bounding boxes, gaps, safe zones)."""
+import argparse
 import json
 import os
 import subprocess
 
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
+
+
+DURATION_TOLERANCE = 0.1
 
 
 def validate_output(path, canvas_w, canvas_h):
@@ -51,6 +55,31 @@ def validate_output(path, canvas_w, canvas_h):
         duration = 0.0
     if duration <= 0:
         raise RuntimeError("La salida no tiene una duración válida")
+    return data
+
+
+def validate_complete_render(path, canvas_w, canvas_h, expected_duration,
+                             tolerance=DURATION_TOLERANCE):
+    """Validate the container and ensure the complete source duration survived.
+
+    A valid MP4 can still be truncated while retaining a readable ``moov`` atom.
+    The render contract therefore compares the output container duration with
+    the duration measured from the source before any frame-level checks.
+    """
+    data = validate_output(path, canvas_w, canvas_h)
+    try:
+        actual_duration = float(data.get("format", {}).get("duration", 0))
+        expected_duration = float(expected_duration)
+        tolerance = max(0.0, float(tolerance))
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("No se pudo comparar la duración del render") from exc
+    if expected_duration <= 0:
+        raise RuntimeError("La duración esperada del video no es válida")
+    if abs(actual_duration - expected_duration) > tolerance:
+        raise RuntimeError(
+            f"Render incompleto: duración {actual_duration:.3f}s; "
+            f"se esperaban {expected_duration:.3f}s (tolerancia {tolerance:.3f}s)"
+        )
     return data
 
 
@@ -125,8 +154,7 @@ def diagnostic_frame(source_png, layout, out_png):
     w, h = im.size
     f = max(1, int(w / 60))
     try:
-        ft = ImageFont.truetype(layout.font or
-                                "/home/isaac/.local/share/fonts/Barlow-ExtraBoldItalic.ttf", f)
+        ft = ImageFont.truetype(layout.font, f)
     except Exception:
         ft = ImageFont.load_default()
     d.rectangle([sl["left"], sl["top"], sl["right"], sl["bottom"]], outline=(255, 255, 0), width=2)
@@ -140,3 +168,38 @@ def diagnostic_frame(source_png, layout, out_png):
     d.text((10, 10), f"videoTop={v.top} videoBottom={v.bottom}", fill=(0, 255, 255), font=ft)
     im.save(out_png)
     return out_png
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Valida dimensiones, SAR, DAR y duración de un MP4 vertical"
+    )
+    parser.add_argument("video")
+    parser.add_argument("--canvas", default="1080x1920")
+    parser.add_argument(
+        "--expected-duration", type=float, default=None,
+        help="duración esperada en segundos; si se omite solo valida el contenedor",
+    )
+    args = parser.parse_args()
+    try:
+        canvas_w, canvas_h = (int(value) for value in args.canvas.lower().split("x"))
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise SystemExit("--canvas debe tener el formato WxH") from exc
+    if (canvas_w <= 0 or canvas_h <= 0 or canvas_w * 16 != canvas_h * 9):
+        raise SystemExit("--canvas debe ser un tamaño vertical 9:16 válido")
+    try:
+        if args.expected_duration is None:
+            data = validate_output(args.video, canvas_w, canvas_h)
+        else:
+            data = validate_complete_render(
+                args.video, canvas_w, canvas_h, args.expected_duration
+            )
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise SystemExit(f"ERROR: {exc}") from exc
+    print(json.dumps(data, ensure_ascii=False))
+    print("VALID: render compatible con el contrato solicitado")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

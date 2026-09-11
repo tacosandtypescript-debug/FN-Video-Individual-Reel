@@ -44,7 +44,10 @@ def resolve_font(path):
             )
             matched = result.stdout.strip()
             if result.returncode == 0 and os.path.isfile(matched):
-                if path and matched != path:
+                looks_like_path = (
+                    os.path.sep in path or path.lower().endswith((".ttf", ".otf"))
+                )
+                if path and looks_like_path and matched != path:
                     print(f"Fuente no encontrada ({path}); usando {matched}")
                 return matched
         except (OSError, subprocess.TimeoutExpired):
@@ -62,12 +65,35 @@ def resolve_font(path):
     )
 
 
+def validate_canvas(canvas_w, canvas_h):
+    """Validate the vertical 9:16 canvas contract before building filters."""
+    try:
+        canvas_w, canvas_h = int(canvas_w), int(canvas_h)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("El canvas debe tener dimensiones enteras") from exc
+    if canvas_w <= 0 or canvas_h <= 0:
+        raise ValueError("Las dimensiones del canvas deben ser positivas")
+    if canvas_w * 16 != canvas_h * 9:
+        raise ValueError(
+            f"El canvas debe ser 9:16; se recibió {canvas_w}x{canvas_h}"
+        )
+    return canvas_w, canvas_h
+
+
+def _safe_unlink(path):
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+
+
 def render(video, out, top_spec, bot_spec, preset_name="tiktok_fortnite",
            canvas=None, gap=None, blur=None, cq=None, wave=None, font=None,
            debug=False, diag=False, correct=True, max_iter=3):
     preset = Preset(preset_name)
     os.makedirs(os.path.dirname(os.path.abspath(out)) or ".", exist_ok=True)
     cw, ch = canvas or tuple(preset["canvas"])
+    cw, ch = validate_canvas(cw, ch)
     gap = gap if gap is not None else cl.scale_1080(preset["gap_1080"], ch)
     spacing = cl.scale_1080(preset["spacing_1080"], ch)
     blur = blur if blur is not None else preset["blur"]
@@ -187,11 +213,20 @@ def render(video, out, top_spec, bot_spec, preset_name="tiktok_fortnite",
                 use_cuda = False
                 continue
             raise RuntimeError("ffmpeg: " + err[-1500:])
-        vr.validate_output(out, cw, ch)
+        try:
+            vr.validate_complete_render(out, cw, ch, probe["duration"])
+        except Exception:
+            _safe_unlink(out)
+            raise
         frame_png = out + ".chk.png"
         # En clips muy cortos 0.3s puede quedar fuera del stream.
         check_t = min(0.3, max(0.0, probe["duration"] / 2.0))
-        vr.extract_frame(out, check_t, frame_png)
+        try:
+            vr.extract_frame(out, check_t, frame_png)
+        except Exception:
+            _safe_unlink(frame_png)
+            _safe_unlink(out)
+            raise
         gtop, gbot = vr.measure_gaps(
             frame_png, layout, anchor_top=anchors[0], anchor_bottom=anchors[1]
         )
@@ -208,24 +243,39 @@ def render(video, out, top_spec, bot_spec, preset_name="tiktok_fortnite",
             final_frame = frame_png
             break
         if not correct:
+            _safe_unlink(frame_png)
+            _safe_unlink(out)
             raise RuntimeError(
                 f"Los gaps reales no cumplen el objetivo: arriba={gtop}, abajo={gbot}; "
                 "usa la corrección automática o ajusta el preset"
             )
         # Superior: si el gap real es demasiado grande, bajar el bloque (dy positivo).
         # Inferior: si el gap real es demasiado grande, subir el bloque (dy negativo).
-        d_top = (gtop - target_top_gap) if (gtop is not None and target_top_gap is not None) else 0
-        d_bot = (target_bot_gap - gbot) if (gbot is not None and target_bot_gap is not None) else 0
+        d_top = (
+            gtop - target_top_gap
+            if gtop is not None and target_top_gap is not None else 0
+        )
+        d_bot = (
+            target_bot_gap - gbot
+            if gbot is not None and target_bot_gap is not None else 0
+        )
         if d_top == 0 and d_bot == 0:
             final_frame = frame_png
             break
         layout.top_block.shift(d_top)
         layout.bot_block.shift(d_bot)
-        layout._validate_text_geometry()
+        try:
+            layout._validate_text_geometry()
+        except Exception:
+            _safe_unlink(frame_png)
+            _safe_unlink(out)
+            raise
         print(f"  correccion: d_top={d_top} d_bot={d_bot}")
-        os.remove(frame_png)
+        _safe_unlink(frame_png)
 
     if final_frame is None:
+        _safe_unlink(out)
+        _safe_unlink(out + ".chk.png")
         raise RuntimeError(
             f"No se pudo validar la geometría después de {max_iter} intentos; "
             "no se entrega el render"

@@ -5,6 +5,8 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage
+.hypothesis/
 
 # --- Entornos virtuales ---
 .venv/
@@ -24,6 +26,8 @@ jobs/
 *.mov
 *.mkv
 *.webm
+*.part
+*.ytdl
 *.chk.png
 *.diag.png
 

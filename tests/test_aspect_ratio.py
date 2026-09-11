@@ -4,8 +4,9 @@ import os, sys, unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 import calculate_layout as cl
+import render_video
 
-FONT = "/home/isaac/.local/share/fonts/Barlow-ExtraBoldItalic.ttf"
+FONT = render_video.resolve_font("Barlow:style=ExtraBold Italic")
 
 
 def make_layout(cw, ch, src_w, src_h):
@@ -17,6 +18,11 @@ def make_layout(cw, ch, src_w, src_h):
 
 
 class AspectRatioTest(unittest.TestCase):
+    def test_render_canvas_must_be_9_16(self):
+        self.assertEqual(render_video.validate_canvas(720, 1280), (720, 1280))
+        with self.assertRaises(ValueError):
+            render_video.validate_canvas(1000, 1000)
+
     def test_wide_full_width(self):
         lay = make_layout(1080, 1920, 1920, 1080)
         self.assertEqual(lay.video.w, 1080)

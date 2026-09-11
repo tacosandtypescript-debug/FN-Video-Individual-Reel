@@ -1,16 +1,57 @@
+import json
 import os
 import sys
 import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
 import telegram_bot as tb
 import video_command
+import render_video
+import prepare_telegram
 from video_job import VideoJob
+from PIL import Image
 
 
 class TelegramBotTest(unittest.TestCase):
+    def test_editorial_style_reads_preset_from_project_root(self):
+        with tempfile.TemporaryDirectory() as directory:
+            preset = Path(directory) / "references" / "presets"
+            preset.mkdir(parents=True)
+            (preset / "custom.json").write_text(
+                json.dumps({
+                    "editorial_colors": {
+                        "palette": ["123456"],
+                        "max_highlights": 1,
+                    }
+                }),
+                encoding="utf-8",
+            )
+            with patch.object(tb, "ROOT", Path(directory)):
+                self.assertEqual(tb._editorial_style("custom"), (("123456",), 1))
+
+    def test_caption_contains_hashtag(self):
+        proposal = tb.EditorialProposal(
+            "https://x.com/post/1",
+            top=["NUEVO EVENTO|FFFFFF"],
+            bottom=["EN FORTNITE|FFFFFF"],
+        )
+        self.assertIn("#Fortnite", tb._caption(proposal))
+
+    def test_thumbnail_is_jpeg_and_within_telegram_limits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = os.path.join(directory, "frame.png")
+            target = os.path.join(directory, "thumbnail.jpg")
+            Image.new("RGB", (1080, 1920), (24, 42, 80)).save(source)
+            prepare_telegram.prepare_thumbnail(source, target)
+            with Image.open(target) as thumbnail:
+                self.assertEqual(thumbnail.format, "JPEG")
+                self.assertLessEqual(max(thumbnail.size), 320)
+            self.assertLess(os.path.getsize(target), 200_000)
+
     def test_store_isolates_and_reloads_job(self):
         with tempfile.TemporaryDirectory() as directory:
             store = tb.JobStore(directory)
@@ -54,7 +95,7 @@ class TelegramBotTest(unittest.TestCase):
         self.assertIn("NUEVO EVENTO HOY", rendered)
 
     def test_auto_title_sanitizes_spec_delimiters_and_keeps_safe_lines(self):
-        font = "/home/isaac/.local/share/fonts/Barlow-ExtraBoldItalic.ttf"
+        font = render_video.resolve_font("Barlow:style=ExtraBold Italic")
         lines = video_command.auto_split_title(
             font,
             "Fortnite | una temporada con un título demasiado largo para una sola pantalla",

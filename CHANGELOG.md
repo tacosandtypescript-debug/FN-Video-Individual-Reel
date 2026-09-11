@@ -13,6 +13,18 @@ Todos los cambios relevantes de este proyecto. Formato basado en
   herramientas y archivos de sistema).
 - Añadidos `LICENSE` (MIT) y este `CHANGELOG.md`.
 - Documentación con índice de estructura del proyecto.
+- Dependencias Python acotadas por versión y `yt-dlp` incluido en
+  `requirements.txt`.
+- Añadido `scripts/check_installation.py` para validar runtime, comandos,
+  fuente y preset antes de operar.
+- `validate_render.py` ahora ofrece una CLI documentada para validar una salida
+  sin depender de imports internos.
+- Validación de duración completa del render, canvas estrictamente 9:16 y
+  limpieza de salidas inválidas.
+- Miniaturas de Telegram convertidas a JPEG compatible (máximo 320 px y menos
+  de 200 kB), además de hashtag en el caption.
+- Descargas remotas limitadas por tamaño y bloqueadas para hosts locales o no
+  globales; rutas de proyecto/presets corregidas para instalaciones portables.
 
 ## 2026-09-11
 

@@ -17,7 +17,7 @@
     "palette": ["B84DFF", "42E8FF", "FFDD00", "FF39D7"],
     "max_highlights": 4
   },
-  "font": "/home/isaac/.local/share/fonts/Barlow-ExtraBoldItalic.ttf",
+  "font": "Barlow:style=ExtraBold Italic",
   "wave": 2,
   "wave_hz": 1.1,
   "outline": 5,

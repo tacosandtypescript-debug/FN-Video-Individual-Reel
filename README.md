@@ -13,7 +13,7 @@ requirements.txt          Dependencias Python (y de sistema, comentadas)
 docs/
   COMMANDS.md             Órdenes completas de instalación y operación
   TELEGRAM.md             Guía de montaje del bot de Telegram
-scripts/                  Motor de edición (resolver, geometría, render, bot)
+scripts/                  Motor de edición (resolver, geometría, render, bot y doctor)
 references/
   presets/                Parámetros visuales (`tiktok_fortnite.json`)
   rules/                  Reglas de fondo, layout, render, safe zones, tipografía
@@ -45,10 +45,16 @@ entre sí por nombre de módulo (por ejemplo `import calculate_layout`).
 
 ## Dependencias
 
-Requiere Python 3.11+, FFmpeg/FFprobe, `yt-dlp`, Pillow y NumPy. Consulta
-`requirements.txt` para las dependencias Python. La GPU NVIDIA es opcional, pero
-si está disponible el render usa `h264_nvenc`; de lo contrario usa el fallback
-CPU configurado en el preset.
+Requiere Python 3.11+, FFmpeg/FFprobe, `yt-dlp`, Pillow y NumPy. Las dependencias
+Python, incluido `yt-dlp`, están declaradas con límites de versión en
+`requirements.txt`. La GPU NVIDIA es opcional, pero si está disponible el render
+usa `h264_nvenc`; de lo contrario usa el fallback CPU configurado en el preset.
+
+Después de instalar las dependencias, valida el entorno con:
+
+```bash
+python3 scripts/check_installation.py
+```
 
 ## Render básico
 
@@ -95,8 +101,9 @@ python3 scripts/telegram_bot.py --jobs-dir /var/lib/fortnite-vve/jobs --max-rend
 
 La guía de integración con un bot existente está en
 `docs/TELEGRAM.md`. El proveedor incluido es conservador y usa únicamente
-metadata de la fuente; para copy editorial en español se puede inyectar un
-`ProposalProvider` propio sin modificar el motor FFmpeg.
+metadata de la fuente; no afirma mecánicas que no hayan sido confirmadas por un
+analizador externo. Para copy editorial basado en el contenido del video se
+puede inyectar un `ProposalProvider` propio sin modificar el motor FFmpeg.
 
 ## Documentación completa
 

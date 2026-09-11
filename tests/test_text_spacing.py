@@ -4,8 +4,9 @@ import os, sys, unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 import calculate_layout as cl
+import render_video
 
-FONT = "/home/isaac/.local/share/fonts/Barlow-ExtraBoldItalic.ttf"
+FONT = render_video.resolve_font("Barlow:style=ExtraBold Italic")
 
 
 def layout_for(src_w, src_h, canvas=(1080, 1920)):

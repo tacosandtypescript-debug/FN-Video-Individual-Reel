@@ -22,7 +22,7 @@ from editorial_proposal import EditorialProposal, EditorialProposalSet
 import probe_video as pv
 import calculate_layout as cl
 
-FONT = "/home/isaac/.local/share/fonts/Barlow-ExtraBoldItalic.ttf"
+FONT = "Barlow:style=ExtraBold Italic"
 
 
 def auto_split_title(font, title, cw, fs, max_lines=8, max_width_frac=0.88):
@@ -57,7 +57,9 @@ def auto_split_title(font, title, cw, fs, max_lines=8, max_width_frac=0.88):
     return lines
 
 
-def ensure_texts(top_spec, bot_spec, title, cw, fs, author="", font=FONT):
+def ensure_texts(top_spec, bot_spec, title, cw, fs, author="", font=None):
+    if not font or font == FONT:
+        font = preset_font("tiktok_fortnite")
     if not top_spec and author and title.startswith(author + " - "):
         title = title[len(author) + 3:]
     if top_spec:
@@ -83,10 +85,21 @@ def preset_font(preset_name):
     return rv.resolve_font(rv.Preset(preset_name).get("font", FONT))
 
 
-def cmd_prepare(url, job_path, workdir):
+def _input_limit_bytes(max_input_mb):
+    try:
+        max_input_mb = float(max_input_mb)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("--max-input-mb debe ser numérico") from exc
+    if max_input_mb <= 0:
+        raise ValueError("--max-input-mb debe ser mayor que cero")
+    return int(max_input_mb * 1024 * 1024)
+
+
+def cmd_prepare(url, job_path, workdir, max_input_mb=500):
     """Resuelve y descarga, pero NO renderiza: deja el VideoJob para revisión."""
     print("Resolviendo enlace...")
-    job = vr.resolve(url, workdir=workdir)
+    job = vr.resolve(url, workdir=workdir,
+                     max_bytes=_input_limit_bytes(max_input_mb))
     if job.metadata.get("browser_required"):
         print("BROWSER_REQUIRED", job.metadata.get("reason", ""))
         return 2
@@ -129,9 +142,10 @@ def cmd_render_approved(job_path, proposal_path, out, preset, canvas, gap, blur,
     return 0
 
 
-def cmd_resolve(url, workdir):
+def cmd_resolve(url, workdir, max_input_mb=500):
     print("Resolviendo enlace...")
-    job = vr.resolve(url, workdir=workdir)
+    job = vr.resolve(url, workdir=workdir,
+                     max_bytes=_input_limit_bytes(max_input_mb))
     if job.metadata.get("browser_required"):
         print("BROWSER_REQUIRED", job.metadata.get("reason", ""))
         return 2
@@ -142,10 +156,11 @@ def cmd_resolve(url, workdir):
 
 
 def cmd_run(url, out, top_spec, bot_spec, preset, canvas, gap, blur, cq, diag,
-            workdir, cleanup_source=False):
+            workdir, cleanup_source=False, max_input_mb=500):
     try:
         print("Resolviendo enlace...")
-        job = vr.resolve(url, workdir=workdir)
+        job = vr.resolve(url, workdir=workdir,
+                         max_bytes=_input_limit_bytes(max_input_mb))
         if job.metadata.get("browser_required"):
             print("BROWSER_REQUIRED", job.metadata.get("reason", ""))
             return 2
@@ -155,10 +170,13 @@ def cmd_run(url, out, top_spec, bot_spec, preset, canvas, gap, blur, cq, diag,
         print(f"  {probe['width']}x{probe['height']} fps={probe['fps']} "
               f"dur={probe['duration']:.1f}s")
         print("Preparando edicion...")
-        cw = (canvas or (1080, 1920))[0]
         import render_video as rv
-        font_size_1080 = rv.Preset(preset).get("font_size_1080", 60)
-        fs = cl.scale_1080(font_size_1080, (canvas or (1080, 1920))[1])
+        preset_data = rv.Preset(preset)
+        default_canvas = tuple(preset_data["canvas"])
+        active_canvas = canvas or default_canvas
+        cw = active_canvas[0]
+        font_size_1080 = preset_data.get("font_size_1080", 60)
+        fs = cl.scale_1080(font_size_1080, active_canvas[1])
         top, bot = ensure_texts(top_spec, bot_spec, job.title, cw, fs, job.author,
                                 font=preset_font(preset))
         print("Renderizando...")
@@ -189,8 +207,12 @@ def cmd_local(path, out, top_spec, bot_spec, preset, canvas, gap, blur, cq, diag
                        input_file=path)
         probe = pv.probe(path)
         print(f"Analizando contenido: {probe['width']}x{probe['height']}")
-        cw = (canvas or (1080, 1920))[0]
-        fs = cl.scale_1080(60, (canvas or (1080, 1920))[1])
+        import render_video as rv
+        preset_data = rv.Preset(preset)
+        default_canvas = tuple(preset_data["canvas"])
+        active_canvas = canvas or default_canvas
+        cw = active_canvas[0]
+        fs = cl.scale_1080(preset_data.get("font_size_1080", 60), active_canvas[1])
         top, bot = ensure_texts(
             top_spec, bot_spec,
             os.path.splitext(os.path.basename(path))[0].replace("_", " "),
@@ -215,6 +237,7 @@ def main():
     p = sub.add_parser("resolve", help="descarga y conserva el VideoJob")
     p.add_argument("url")
     p.add_argument("--workdir", default=None)
+    p.add_argument("--max-input-mb", type=float, default=500)
     p = sub.add_parser("run")
     p.add_argument("url")
     p.add_argument("-o", "--out", required=True)
@@ -227,10 +250,12 @@ def main():
     p.add_argument("--cq", type=int, default=None)
     p.add_argument("--diag", action="store_true")
     p.add_argument("--workdir", default=None)
+    p.add_argument("--max-input-mb", type=float, default=500)
     p = sub.add_parser("prepare", help="descarga y guarda un VideoJob; no renderiza")
     p.add_argument("url")
     p.add_argument("--job", required=True)
     p.add_argument("--workdir", required=True)
+    p.add_argument("--max-input-mb", type=float, default=500)
     p = sub.add_parser("render-approved", help="renderiza solo una propuesta aprobada")
     p.add_argument("--job", required=True)
     p.add_argument("--proposal", required=True)
@@ -265,15 +290,16 @@ def main():
         os.makedirs(workdir, exist_ok=True)
     try:
         if a.cmd == "prepare":
-            rc = cmd_prepare(a.url, a.job, a.workdir)
+            rc = cmd_prepare(a.url, a.job, a.workdir, a.max_input_mb)
         elif a.cmd == "render-approved":
             rc = cmd_render_approved(a.job, a.proposal, a.out, a.preset, canvas,
                                      a.gap, a.blur, a.cq, a.diag)
         elif a.cmd == "resolve":
-            rc = cmd_resolve(a.url, workdir)
+            rc = cmd_resolve(a.url, workdir, a.max_input_mb)
         elif a.cmd == "run":
             rc = cmd_run(a.url, a.out, a.top, a.bot, a.preset, canvas, a.gap,
-                         a.blur, a.cq, a.diag, workdir, cleanup_source=bool(tmp))
+                         a.blur, a.cq, a.diag, workdir,
+                         cleanup_source=bool(tmp), max_input_mb=a.max_input_mb)
         else:
             rc = cmd_local(a.path, a.out, a.top, a.bot, a.preset, canvas, a.gap,
                            a.blur, a.cq, a.diag)
