@@ -18,8 +18,9 @@
 ```
 
 La aplicación no ejecuta el navegador como fallback. Si `yt-dlp` devuelve
-login/private, el bot informa que ese enlace requiere una sesión o un fallback
-externo. Esto evita que un proceso de navegador quede vivo durante FFmpeg.
+login/private o no puede resolver el enlace, el bot informa `BROWSER_REQUIRED`;
+un handler externo debe proporcionar una URL o archivo ya autenticado. Esto
+evita que un proceso de navegador quede vivo durante FFmpeg.
 
 La miniatura se genera separada del frame de diagnóstico: Telegram requiere
 JPEG, menos de 200 kB y dimensiones máximas de 320 px. El frame original no se

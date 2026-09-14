@@ -53,8 +53,14 @@ def resolve_font(path):
         except (OSError, subprocess.TimeoutExpired):
             pass
     for candidate in (
+        # Windows normally has no fc-match; use an installed bold italic
+        # system font when the branded font is unavailable.
+        r"C:\Windows\Fonts\arialbi.ttf",
+        r"C:\Windows\Fonts\calibriz.ttf",
+        r"C:\Windows\Fonts\segoeuiz.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-BoldOblique.ttf",
         "/usr/share/fonts/truetype/freefont/FreeSansBoldOblique.ttf",
+        "/usr/share/fonts/truetype/liberation2/LiberationSans-BoldItalic.ttf",
     ):
         if os.path.isfile(candidate):
             if path:

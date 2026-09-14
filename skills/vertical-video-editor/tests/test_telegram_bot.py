@@ -3,6 +3,7 @@ import os
 import sys
 import tempfile
 import unittest
+import asyncio
 from pathlib import Path
 from unittest.mock import patch
 
@@ -17,6 +18,33 @@ from PIL import Image
 
 
 class TelegramBotTest(unittest.TestCase):
+    def test_send_video_uses_prepared_jpeg_thumbnail(self):
+        class FakeBot:
+            def __init__(self):
+                self.thumbnail_header = None
+
+            async def send_video(self, **kwargs):
+                self.thumbnail_header = kwargs["thumbnail"].read(2)
+
+        with tempfile.TemporaryDirectory() as directory:
+            record = tb.BotJob(
+                job_id="a" * 32, chat_id=1, owner_id=2,
+                workdir=directory, job_path=os.path.join(directory, "job.json"),
+                proposal_path=os.path.join(directory, "proposal.json"),
+                master_path=os.path.join(directory, "master.mp4"),
+                telegram_path=os.path.join(directory, "telegram.mp4"),
+            )
+            Path(record.telegram_path).write_bytes(b"video")
+            thumbnail = os.path.join(directory, "thumbnail.jpg")
+            Image.new("RGB", (32, 32), (1, 2, 3)).save(thumbnail, "JPEG")
+            proposal = tb.EditorialProposal(
+                "telegram://job", top=["NUEVO|FFFFFF"], bottom=[]
+            )
+            bot = FakeBot()
+            service = tb.TelegramVideoBot(tb.JobStore(directory))
+            asyncio.run(service._send_video(bot, record, proposal, thumbnail))
+            self.assertEqual(bot.thumbnail_header, b"\xff\xd8")
+
     def test_editorial_style_reads_preset_from_project_root(self):
         with tempfile.TemporaryDirectory() as directory:
             preset = Path(directory) / "references" / "presets"

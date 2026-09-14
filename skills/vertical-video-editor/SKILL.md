@@ -1,13 +1,50 @@
 ---
-name: vertical-video-editor
-description: "Use when /video or vertical 9:16 video edit with FFmpeg."
+name: video
+description: "Edit vertical TikTok and Reels videos with FFmpeg."
 license: MIT
+version: 1.1.0
+author: tacosandtypescript-debug
 metadata:
   hermes:
-    tags: [ffmpeg, vertical, video, tiktok, reels, geometria, cover, "/video"]
+    category: video
+    tags: [ffmpeg, vertical, video, tiktok, reels, fortnite, telegram]
 ---
 
 # Vertical Video Editor — Skill canonica de edicion de video vertical
+
+## Activación en Hermes
+
+Esta skill se instala con el nombre `video` y se carga explícitamente con
+`/video`. El mismo comando puede ser recibido por el handler de Telegram, que
+debe delegar el trabajo a este flujo. En conversación natural, si el mensaje
+trata de editar un vídeo vertical, carga esta skill antes de responder.
+
+## Contrato operativo obligatorio
+
+1. Carga esta skill antes de ejecutar o recomendar cualquier edición de vídeo
+   vertical, aunque el usuario no escriba `/video`.
+2. Localiza el directorio que contiene este `SKILL.md` y llama a los scripts con
+   su ruta absoluta; nunca asumas que el directorio actual es el directorio de
+   la skill.
+3. No renderices antes de tener `VideoJob`, propuesta editorial aprobada y
+   validación de entorno.
+4. No entregues un MP4 hasta completar la verificación final de duración,
+   contenedor, geometría, safe zones y miniatura.
+5. Si falla una comprobación, detén el flujo, conserva el `job_id` y explica la
+   acción necesaria; no improvises un editor o un render parcial.
+
+Checklist final antes de responder que terminó:
+
+```text
+[ ] Skill cargada
+[ ] VideoJob y job_id creados
+[ ] Propuesta aprobada explícitamente
+[ ] Render completo y ffprobe legible
+[ ] Duración conservada
+[ ] DAR 9:16 y SAR 1:1 verificados
+[ ] Thumbnail JPEG válido
+[ ] send_video ejecutado si el destino es Telegram
+```
 
 Motor unico de edicion vertical 9:16. **Todo cambio de estilo futuro se hace AQUI**
 y los videos nuevos heredan las reglas automaticamente. Entrada desde Telegram: `/video`.
@@ -60,7 +97,7 @@ y los videos nuevos heredan las reglas automaticamente. Entrada desde Telegram: 
     `Código: khetzalgg` se renderiza como `CODIGO: KHETZALGG`; el campo
     **ORIGINAL** mostrado en la revisión sí conserva el texto publicado.
 
-## Pipeline (scripts en `scripts/`)
+## Pipeline (scripts en `<SKILL_ROOT>/scripts/`)
 
 ```
 probe_video.py        FFprobe: width/height/DAR/SAR/rotation/fps/duration/pix_fmt
@@ -73,14 +110,19 @@ probe_video.py        FFprobe: width/height/DAR/SAR/rotation/fps/duration/pix_fm
   -> prepare_telegram.py  comprueba tamaño/DAR/SAR/audio y crea copia Telegram si hace falta
 ```
 
-Antes de operar, comprobar el entorno con `python3 scripts/check_installation.py`.
+Antes de operar, localizar `<SKILL_ROOT>` como el directorio que contiene este
+`SKILL.md` y comprobar el entorno con:
+
+```bash
+python "<SKILL_ROOT>/scripts/check_installation.py"
+```
 El archivo `requirements.txt` cubre las dependencias Python, incluido `yt-dlp`;
 FFmpeg y FFprobe siguen siendo dependencias del sistema.
 
 ## Uso
 
 ```bash
-python3 scripts/render_video.py INPUT.mp4 -o SALIDA.mp4 \
+python "<SKILL_ROOT>/scripts/render_video.py" INPUT.mp4 -o SALIDA.mp4 \
     --preset tiktok_fortnite \
     --top top.txt --bot bot.txt \       # cada linea: TEXTO|COLORHEX|SIZE(opcional)
     [--canvas 1080x1920] [--gap 32] [--blur 16] [--cq 21]
@@ -96,7 +138,7 @@ python3 scripts/render_video.py INPUT.mp4 -o SALIDA.mp4 \
 ## Preparación para Telegram
 
 ```bash
-python3 scripts/prepare_telegram.py RENDER.mp4 -o RENDER_tg.mp4
+python "<SKILL_ROOT>/scripts/prepare_telegram.py" RENDER.mp4 -o RENDER_tg.mp4
 ```
 
 Si el archivo pesa como máximo 45 MB, lo conserva. Si supera ese tamaño, genera
@@ -237,13 +279,13 @@ repiten la misma promesa.
 Herramientas persistentes:
 
 ```text
-video_command.py prepare URL --workdir JOB_DIR --job JOB_DIR/video_job.json
+python "<SKILL_ROOT>/scripts/video_command.py" prepare URL --workdir JOB_DIR --job JOB_DIR/video_job.json
 # resolver + descargar + metadata, sin FFmpeg
 
-editorial_proposal.py
+python "<SKILL_ROOT>/scripts/editorial_proposal.py"
 # valida y guarda bloques arriba/abajo con color
 
-video_command.py render-approved --job JOB.json --proposal PROPUESTA.json -o salida.mp4
+python "<SKILL_ROOT>/scripts/video_command.py" render-approved --job JOB.json --proposal PROPUESTA.json -o salida.mp4
 # rechaza propuestas con status distinto de approved
 ```
 
@@ -278,10 +320,13 @@ Flujo (handler de Telegram SOLO orquesta; la lógica vive en los scripts):
   6 enviar video terminado por Telegram (MEDIA:<out>)
 ```
 
-El navegador sigue siendo solo fallback de la fase 1; debe cerrarse por completo
-antes de la fase 3 y jamás permanece abierto durante FFmpeg.
+El resolvedor no abre navegadores. Si `yt-dlp` devuelve `login_required`, `private`
+o no puede resolver la URL, el trabajo termina como `BROWSER_REQUIRED` y un
+handler externo debe aportar una URL o archivo ya autenticado. No se debe
+afirmar que existe un fallback automático de navegador ni dejar una sesión
+abierta durante FFmpeg.
 
-Ejecución desde línea: `python3 scripts/video_command.py run URL -o out.mp4`
+Ejecución desde línea: `python "<SKILL_ROOT>/scripts/video_command.py" run URL -o out.mp4`
 (mensajes de progreso: Resolviendo… Descargando… Analizando… Preparando…
 Renderizando… Validando… Enviando…).
 
@@ -298,13 +343,14 @@ pedir al usuario el texto antes de renderizar.
 
 URL inválida · plataforma no soportada · video privado · login requerido ·
 descarga fallida · archivo vacío/corrupto · FFprobe fallido · FFmpeg fallido ·
-timeout. En cualquier caso: cerrar navegador, matar procesos hijos, borrar
-temporales y liberar el job.
+timeout. En cualquier caso: matar procesos hijos, borrar temporales y liberar
+el job. El resolvedor no inicia navegadores.
 
 ### Compatibilidad
 
-TikTok, X/Twitter, YouTube, Instagram y URLs directas MP4 vía yt-dlp (fallback
-de navegador solo si realmente hace falta).
+TikTok, X/Twitter, YouTube, Instagram y URLs directas MP4 vía yt-dlp. Los
+enlaces que requieren navegador quedan fuera del flujo automático y se reportan
+como `BROWSER_REQUIRED`.
 
 ## Tests
 

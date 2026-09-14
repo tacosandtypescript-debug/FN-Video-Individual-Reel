@@ -46,13 +46,13 @@ class ResolverTest(unittest.TestCase):
             self.assertEqual(args[args.index("--max-filesize") + 1], "500M")
             self.assertTrue(path.endswith("original.mp4"))
 
-    @patch("video_resolver.subprocess.run")
-    def test_probe_disables_playlists(self, run):
-        run.return_value.returncode = 0
-        run.return_value.stdout = '{"title":"demo"}'
-        run.return_value.stderr = ""
+    @patch("video_resolver._ytdlp")
+    def test_probe_disables_playlists(self, ytdlp):
+        ytdlp.return_value.returncode = 0
+        ytdlp.return_value.stdout = '{"title":"demo"}'
+        ytdlp.return_value.stderr = ""
         meta, browser, reason = vr.probe_remote("https://x.com/user/status/1")
-        args = run.call_args.args[0]
+        args = ytdlp.call_args.args[0]
         self.assertIn("--no-playlist", args)
         self.assertFalse(browser)
         self.assertEqual(reason, "")

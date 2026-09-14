@@ -616,7 +616,8 @@ class TelegramVideoBot:
         if not self._authorized(user):
             return
         caption = (message.caption or "").strip().casefold()
-        waiting = bool(context.chat_data.pop("awaiting_media", False))
+        # Keep the pending /video state until the attachment is accepted.
+        waiting = bool(context.chat_data.get("awaiting_media", False))
         if (not waiting and
                 not re.match(r"^/video(?:@[^\s]+)?(?:\s|$)", caption)):
             return
@@ -633,6 +634,7 @@ class TelegramVideoBot:
         if media is None:
             await message.reply_text("No encontré un video adjunto.")
             return
+        context.chat_data.pop("awaiting_media", None)
         if not self._capacity_available():
             await message.reply_text("Hay tres trabajos en curso; espera a que termine uno.")
             return
@@ -704,13 +706,13 @@ class TelegramVideoBot:
                                approved: EditorialProposal) -> None:
         try:
             async with self.render_slots:
-                report, frame = await asyncio.to_thread(self.pipeline.render, record)
+                report, thumbnail = await asyncio.to_thread(self.pipeline.render, record)
             current = self.store.load(record.job_id)
             if current is None or current.status == "cancelled":
                 return
             record.status = "sending"
             self.store.save(record)
-            await self._send_video(bot, record, approved, frame)
+            await self._send_video(bot, record, approved, thumbnail)
             record.status = "sent"
             if self.keep_files:
                 self.store.save(record)
@@ -725,9 +727,9 @@ class TelegramVideoBot:
             await self._fail(bot, record, f"No pude completar el render ({type(exc).__name__}). Trabajo: {record.job_id[:8]} queda guardado para revisar.")
 
     async def _send_video(self, bot: Any, record: BotJob,
-                          proposal: EditorialProposal, frame: str | None) -> None:
+                           proposal: EditorialProposal, thumbnail: str | None) -> None:
         video_path = Path(record.telegram_path)
-        thumb_path = (Path(frame) if frame
+        thumb_path = (Path(thumbnail) if thumbnail
                       else Path(record.workdir) / "thumbnail.jpg")
         with video_path.open("rb") as video:
             if thumb_path.is_file():
