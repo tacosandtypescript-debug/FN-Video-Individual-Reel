@@ -2,6 +2,8 @@
   "name": "tiktok_fortnite",
   "description": "Estilo TikTok Fortnite @khetzalgg: video central ancho completo, fondo cover blur, textos anclados con gap simetrico",
   "canvas": [1080, 1920],
+  "output_fps": 60,
+  "cover_mode": "precrop",
   "gap_1080": 32,
   "spacing_1080": 18,
   "font_size_1080": 60,

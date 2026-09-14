@@ -98,6 +98,38 @@ class EncodingTest(unittest.TestCase):
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
+    def test_output_fps_is_explicitly_normalized(self):
+        cmd, tmpdir, _ = bff.build(
+            "input.mp4",
+            {"width": 1920, "height": 1080},
+            {"x": 0, "y": 0, "w": 1920, "h": 1080},
+            self.make_layout(),
+            "output.mp4",
+            output_fps=60,
+            encode={"vcodec": "libx264", "pix_fmt": "yuv420p"},
+            use_cuda=False,
+        )
+        try:
+            graph = cmd[cmd.index("-filter_complex") + 1]
+            self.assertIn("fps=60", graph)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_output_is_not_truncated_to_shorter_audio_stream(self):
+        cmd, tmpdir, _ = bff.build(
+            "input.mp4",
+            {"width": 1920, "height": 1080},
+            {"x": 0, "y": 0, "w": 1920, "h": 1080},
+            self.make_layout(),
+            "output.mp4",
+            encode={"vcodec": "libx264", "pix_fmt": "yuv420p"},
+            use_cuda=False,
+        )
+        try:
+            self.assertNotIn("-shortest", cmd)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
 
 if __name__ == "__main__":
     unittest.main()

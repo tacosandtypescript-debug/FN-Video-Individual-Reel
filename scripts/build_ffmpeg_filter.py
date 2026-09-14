@@ -62,14 +62,19 @@ def build(video_path, probe, active, layout, out_path, blur=16.0, cq=21,
           outline=5, outline_color="black", wave=2, wave_hz=1.1, font=None, audio=True,
           fg_radius=18, shadow_enabled=True, shadow_offset=8,
           shadow_blur=14, shadow_opacity=0.58, watermark=None,
-          encode=None, use_cuda=None):
+          encode=None, use_cuda=None, output_fps=None,
+          cover_mode="scale-crop"):
     encode = encode or {}
     requested_vcodec = encode.get("vcodec", "h264_nvenc")
     if use_cuda is None:
         use_cuda = requested_vcodec.endswith("_nvenc")
     v = layout.video
     cw, ch = layout.cw, layout.ch
-    cover = bb.cover_dims(active["w"], active["h"], cw, ch)
+    cover = (
+        (cw, ch)
+        if cover_mode == "precrop"
+        else bb.cover_dims(active["w"], active["h"], cw, ch)
+    )
 
     is_full = (active["x"] == 0 and active["y"] == 0 and
                active["w"] == probe["width"] and active["h"] == probe["height"])
@@ -81,7 +86,14 @@ def build(video_path, probe, active, layout, out_path, blur=16.0, cq=21,
         pre = (f"[0:v]{decode}format=nv12,crop={active['w']}:{active['h']}:"
                f"{active['x']}:{active['y']},format=nv12,split=2[bg][fg];")
 
-    bg = bb.bg_chain(cw, ch, blur)
+    bg = bb.bg_chain(
+        cw,
+        ch,
+        blur,
+        src_w=active["w"],
+        src_h=active["h"],
+        mode=cover_mode,
+    )
     fg = f"[fg]scale={v.w}:{v.h},format=rgba[fgs];"
     mask_expr = _rounded_alpha_expr(v.w, v.h, max(2, fg_radius))
     # alphamerge consumes the luminance plane of the mask.  Writing ``a=`` on
@@ -128,7 +140,14 @@ def build(video_path, probe, active, layout, out_path, blur=16.0, cq=21,
         text_chain = ""
         current = "[base]"
     pix_fmt = encode.get("pix_fmt", "yuv420p")
-    fc = pre + bg + fg + ov + text_chain + f"{current}format={pix_fmt},setsar=1[out]"
+    fps_filter = ""
+    if output_fps is not None:
+        output_fps = float(output_fps)
+        if output_fps <= 0:
+            raise ValueError("output_fps debe ser mayor que cero")
+        fps_filter = f"fps={output_fps:g},"
+    fc = (pre + bg + fg + ov + text_chain +
+          f"{current}{fps_filter}format={pix_fmt},setsar=1[out]")
 
     cmd = ["ffmpeg", "-y", "-v", "error"]
     if use_cuda:
@@ -141,7 +160,7 @@ def build(video_path, probe, active, layout, out_path, blur=16.0, cq=21,
     if audio:
         cmd += ["-c:a", str(encode.get("acodec", "aac")),
                 "-b:a", str(encode.get("audio_bitrate", "96k"))]
-    cmd += ["-shortest", "-movflags", "+faststart", out_path]
+    cmd += ["-movflags", "+faststart", out_path]
     return cmd, tmpdir, cover
 
 

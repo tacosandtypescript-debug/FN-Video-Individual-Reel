@@ -202,7 +202,9 @@ def render(video, out, top_spec, bot_spec, preset_name="tiktok_fortnite",
                                       shadow_blur=shadow_blur,
                                       shadow_opacity=shadow_opacity,
                                       watermark=watermark,
-                                      encode=encode, use_cuda=use_cuda)
+                                      encode=encode, use_cuda=use_cuda,
+                                      output_fps=preset.get("output_fps"),
+                                      cover_mode=preset.get("cover_mode", "scale-crop"))
         if debug:
             print(f"Background scaled: {cover[0]}x{cover[1]} (cover, AR intacto)")
         rc, err = bf.run(cmd)

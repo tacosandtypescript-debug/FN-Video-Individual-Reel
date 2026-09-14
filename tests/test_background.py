@@ -26,6 +26,19 @@ class BackgroundTest(unittest.TestCase):
     def test_no_tiny_downscale(self):
         self.assertNotIn("scale_cuda=96", bb.bg_chain(1080, 1920, 16))
 
+    def test_precrop_cover_avoids_overscale_and_keeps_centered_ar(self):
+        chain = bb.bg_chain(
+            1080,
+            1920,
+            16,
+            src_w=1920,
+            src_h=1080,
+            mode="precrop",
+        )
+        self.assertIn("crop=608:1080:(iw-608)/2:(ih-1080)/2", chain)
+        self.assertIn("scale=1080:1920", chain)
+        self.assertNotIn("force_original_aspect_ratio=increase", chain)
+
 
 if __name__ == "__main__":
     unittest.main()
