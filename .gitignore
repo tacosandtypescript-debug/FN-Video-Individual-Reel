@@ -7,6 +7,8 @@ __pycache__/
 .ruff_cache/
 .coverage
 .hypothesis/
+.cache/
+.tox/
 
 # --- Entornos virtuales ---
 .venv/
@@ -18,10 +20,21 @@ env/
 *.env
 *.pem
 *.key
+*.p12
+*.pfx
+*.crt
+*.secret
+*.token
+secrets/
+.hub/
 
 # --- Trabajos y renders generados ---
 jobs/
 .vve_jobs/
+build/
+dist/
+out/
+outputs/
 *.mp4
 *.mov
 *.mkv
